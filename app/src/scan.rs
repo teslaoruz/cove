@@ -13,6 +13,7 @@ pub struct Project {
     pub name: String,
     pub collection: String,
     pub dirs: Vec<PathBuf>, // Claude Code session folders that belong to this project
+    pub recs: Vec<crate::agents::Rec>, // opencode or Codex sessions, when that agent is selected
     pub sessions: usize,
     pub last: f64, // newest session file mtime, unix seconds; 0 = none
 }
@@ -132,6 +133,7 @@ pub fn collect(s: &Settings) -> Vec<Project> {
             name: if root == home { "Home folder".into() } else { Path::new(root).file_name().map(|n| n.to_string_lossy().replace('_', " ")).unwrap_or_default() },
             collection: coll.into(),
             dirs: vec![],
+            recs: vec![],
             sessions: 0,
             last: 0.0,
         });
@@ -154,11 +156,13 @@ pub fn collect(s: &Settings) -> Vec<Project> {
             None => add(&mut cards, &home, &p, "Other"),
         }
     }
+    // sessions come from the selected agent only, so switching agents switches every count and list
+    let claude = !matches!(s.agent.as_str(), "opencode" | "codex");
     // attach Claude Code session folders
     let mut by_enc: HashMap<String, String> = cards.keys().map(|r| (encode(r), r.clone())).collect();
     by_enc.insert(encode(&home), home.clone());
     let mut found: Vec<(String, PathBuf, Vec<PathBuf>)> = vec![];
-    for e in fs::read_dir(claude_dir().join("projects")).into_iter().flatten().flatten() {
+    for e in fs::read_dir(claude_dir().join("projects")).into_iter().filter(|_| claude).flatten().flatten() {
         let dir = e.path();
         if !dir.is_dir() || fs::symlink_metadata(&dir).is_ok_and(|m| m.file_type().is_symlink()) {
             continue;
@@ -197,6 +201,29 @@ pub fn collect(s: &Settings) -> Vec<Project> {
             c.sessions += files.len();
             c.last = c.last.max(files.iter().map(|f| mtime(f)).fold(0.0, f64::max));
             c.dirs.push(dir);
+        }
+    }
+    let chats = crate::chat::chat_dir().to_string_lossy().into_owned();
+    for rec in crate::agents::load(&s.agent) {
+        let cwd = norm(&rec.cwd);
+        if cwd == chats {
+            continue; // the hub's own chat, not a project
+        }
+        let Some(cwd) = resolve(&cwd, s) else { continue }; // folder deleted
+        let root = if cwd == home {
+            add(&mut cards, &home, &home, "Home");
+            home.clone()
+        } else if let Some((coll, root)) = place_or_self(&cwd, s) {
+            add(&mut cards, &home, &root, &coll);
+            root
+        } else {
+            add(&mut cards, &home, &cwd, "Other");
+            cwd
+        };
+        if let Some(c) = cards.get_mut(&root) {
+            c.sessions += 1;
+            c.last = c.last.max(rec.updated);
+            c.recs.push(rec);
         }
     }
     let mut out: Vec<Project> = cards.into_values().filter(|c| !s.hidden.contains(&c.root)).collect();
@@ -263,7 +290,12 @@ pub struct Session {
 fn sessions_of(projects: &[&Project], n: usize) -> Vec<Session> {
     let mut files: Vec<(f64, PathBuf, String)> = projects.iter().flat_map(|p| p.dirs.iter().flat_map(|d| jsonl_files(d)).map(|f| (mtime(&f), f, p.root.clone()))).collect();
     files.sort_by(|a, b| b.0.total_cmp(&a.0));
-    let mut out = vec![];
+    let mut out: Vec<Session> = projects.iter().flat_map(|p| p.recs.iter().filter(|r| !r.title.is_empty()).map(|r| Session { id: r.id.clone(), root: p.root.clone(), title: r.title.clone(), mtime: r.updated })).collect();
+    if !out.is_empty() {
+        out.sort_by(|a, b| b.mtime.total_cmp(&a.mtime));
+        out.truncate(n);
+        return out; // another agent: its sessions are all there is
+    }
     for (mt, f, root) in files {
         if let Some(t) = first_prompt(&f) {
             out.push(Session { id: f.file_stem().unwrap().to_string_lossy().into(), root, title: t, mtime: mt });
@@ -312,6 +344,9 @@ pub fn day_counts(projects: &[Project]) -> HashMap<String, u32> {
             for f in jsonl_files(d) {
                 *out.entry(start_day(&f)).or_insert(0) += 1;
             }
+        }
+        for r in &p.recs {
+            *out.entry(day_of(r.prompts.first().copied().unwrap_or(r.updated))).or_insert(0) += 1;
         }
     }
     out

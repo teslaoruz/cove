@@ -98,13 +98,33 @@ pub fn load(projects: &[Project]) -> Activity {
                 new.insert(key, st);
             }
         }
+        for r in &p.recs {
+            for &t in &r.prompts {
+                let Some(h) = chrono::DateTime::from_timestamp(t as i64, 0).map(|t| t.with_timezone(&Local).format("%Y-%m-%d %H").to_string()) else { continue };
+                *a.days.entry(h[..10].to_string()).or_insert(0) += 1;
+                if h[..10] >= *since {
+                    prompts += 1;
+                }
+                *a.hours.entry(h).or_insert(0) += 1;
+            }
+            for &(t, n) in &r.tokens {
+                let d = scan::day_of(t);
+                if d >= since {
+                    toks += n;
+                }
+                *a.tokens.entry(d).or_insert(0) += n;
+            }
+        }
         if prompts > 0 {
             a.projects.push((p.root.clone(), prompts, toks));
         }
     }
     a.projects.sort_by(|x, y| y.1.cmp(&x.1));
-    let _ = fs::create_dir_all(cache_dir());
-    let _ = fs::write(&cache_path, serde_json::to_string(&new).unwrap_or_default());
+    if !new.is_empty() {
+        // another agent reads no Claude files: keep the Claude cache for when the user switches back
+        let _ = fs::create_dir_all(cache_dir());
+        let _ = fs::write(&cache_path, serde_json::to_string(&new).unwrap_or_default());
+    }
     a
 }
 

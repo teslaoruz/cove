@@ -114,7 +114,7 @@ pub fn llm_route(text: &str, projects: &[(String, String)]) -> Option<Value> {
 mod tests {
     use super::*;
     fn p(root: &str) -> Project {
-        Project { root: root.into(), name: String::new(), collection: String::new(), dirs: vec![], sessions: 0, last: 0.0 }
+        Project { root: root.into(), name: String::new(), collection: String::new(), dirs: vec![], recs: vec![], sessions: 0, last: 0.0 }
     }
     #[test]
     fn routes() {

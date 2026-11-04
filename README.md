@@ -148,6 +148,7 @@ You can also type a project's name in the box and press Enter.
 
 - **Every project in one place.** Each card shows the session count, when you last worked on the project, and its git state. Pin favourites and hide what you don't need.
 - **One-click sessions.** Open a new session, continue the last one, or resume any past session from its first message.
+- **Your agent, your data.** Switch between Claude Code, Codex and opencode at the bottom of the sidebar. Session counts, recent sessions, Activity, running agents and Chat all follow the agent you pick.
 - **Live agents.** See which agents are running right now, in which project, and whether they are working or waiting for you.
 - **Ask in plain words.** Type requests such as *"continue nebula-api"*, *"run quill"* or *"new project called atlas"*. Cove opens the right place, with your request already typed.
 - **Chat.** Talk to Claude Code without picking a project first. When an idea grows, turn the chat into a project with one click.
@@ -175,7 +176,7 @@ Copies you build from source never update themselves.
 | Settings | `%APPDATA%\cove\settings.json` | `~/.config/cove/settings.json` |
 | Cache | `%LOCALAPPDATA%\cove\` | `~/.cache/cove/` |
 
-- Cove reads Claude Code's session history from `~/.claude/projects/`, or from `CLAUDE_CONFIG_DIR` if you set it. It never edits or deletes your project sessions. Only Cove's own chats can be renamed or deleted from inside Cove.
+- Cove reads session history read-only: Claude Code's from `~/.claude/projects/` (or `CLAUDE_CONFIG_DIR`), opencode's from `~/.local/share/opencode/opencode.db`, and Codex's from `~/.codex/` (or `CODEX_HOME`). It never edits or deletes your project sessions. Only Cove's own chats can be renamed or deleted from inside Cove.
 - Agents run with your own login. Cove has no account, no telemetry and no server of its own.
 - Cove makes one network request of its own: the daily update check, which goes to GitHub. Some widgets run your own tools in the background:
   - **Inbox** asks `claude` (Haiku model, read-only Gmail and Google Calendar connectors) for unread mail and upcoming events, at most every 3 hours. It is off until you turn it on.
@@ -242,6 +243,8 @@ Not yet. The code has macOS paths in place, but there is no tested build. Contri
 - **Jump to an agent's window** works on the [niri](https://github.com/YaLTeR/niri) compositor. Elsewhere, Cove shows running agents but can't bring their window to the front.
 - **Voice** (talk to Cove, spoken replies) has mostly been tested on Linux. Voice input needs [Handy](https://handy.computer) or a local sherpa-onnx model, and stays off without them.
 - **Glass** (see-through window) uses Mica on Windows. On Linux, it needs a compositor that blurs, such as KDE Plasma, Hyprland or niri.
+- **Codex support is new.** Cove reads Codex's sessions and can chat through `codex exec`, but this has not been tested with a signed-in Codex yet.
+- **Chat extras are for Claude Code.** Renaming a chat and turning a chat into a project work with Claude Code. With opencode you can delete chats; with Codex, neither yet.
 - **Windows is newer than Linux.** Each release is built and installed on Windows in CI. If something doesn't feel right, please [open an issue](https://github.com/teslaoruz/cove/issues).
 
 ## Build from source

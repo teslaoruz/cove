@@ -2,6 +2,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod activity;
+mod agents;
 mod asr;
 mod update;
 mod chat;
@@ -229,7 +230,7 @@ fn refresh_home(ui: &AppWindow) {
             Fact { title: ss("Streak"), value: ss(if streak > 0 { plural(streak, "day") } else { "—".into() }), sub: ss(""), warn: false },
         ];
         ui.set_facts(model(facts));
-        set_usage(ui, &st.status);
+        set_usage(ui, &st.status.clone().filter(|_| st.s.agent == "claude")); // the meters are Claude's limits
         let pin_idx: Vec<usize> = st.s.pinned.iter().filter_map(|r| st.find(r)).collect();
         let pins: Vec<ProjectItem> = pin_idx.into_iter().map(|i| st.item(i, 0)).collect();
         ui.set_pinned_items(model(pins));
@@ -925,6 +926,7 @@ fn main() {
     }
     let settings = Settings::load();
     chat::set_dir(&settings.chat_dir);
+    chat::set_agent(&settings.agent);
     if std::env::args().any(|a| a == "--list") {
         // print the projects the app finds, for checking the scan settings
         for p in scan::collect(&settings) {
@@ -1071,6 +1073,12 @@ fn main() {
             true
         });
         if changed { apply_theme(&ui); refresh_home(&ui); refresh_settings(&ui); }
+        if changed && key == "agent" {
+            // sessions, activity, running agents and chats all come from the selected agent
+            with(|st| { st.act_started = false; st.agents.clear(); chat::set_agent(&st.s.agent); });
+            clear_chat(&ui);
+            rescan(&ui);
+        }
     });
     cb!(on_set_vault, |ui, v: SharedString| {
         let ok = v.is_empty() || Path::new(v.as_str()).is_dir();
@@ -1209,6 +1217,7 @@ fn main() {
             if w2.upgrade_in_event_loop(move |ui| {
                 let status: Option<serde_json::Value> = status.and_then(|s| serde_json::from_str(&s).ok());
                 let (changed, theme_changed) = with(|st| {
+                    let agents: Vec<live::Agent> = agents.into_iter().filter(|a| a.tool == st.s.agent).collect(); // the selected agent only
                     let ch = st.agents != agents;
                     let tc = dark.is_some_and(|d| d != st.sys_dark);
                     if let Some(d) = dark { st.sys_dark = d; }
@@ -1322,7 +1331,7 @@ fn set_usage(ui: &AppWindow, status: &Option<serde_json::Value>) {
 /// Usage numbers move every poll; only the sidebar meters change.
 fn refresh_home_facts(ui: &AppWindow) {
     refresh_head(ui);
-    let status = with(|st| st.status.clone());
+    let status = with(|st| st.status.clone().filter(|_| st.s.agent == "claude"));
     set_usage(ui, &status);
 }
 

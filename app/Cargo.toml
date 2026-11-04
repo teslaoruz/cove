@@ -14,6 +14,7 @@ dirs = "6"
 sysinfo = { version = "0.40", default-features = false, features = ["system", "disk"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 cpal = "0.18.2"
+rusqlite = { version = "0.41.1", features = ["bundled"] }
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 window-vibrancy = "0.8"

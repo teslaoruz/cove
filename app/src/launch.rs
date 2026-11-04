@@ -76,6 +76,8 @@ pub fn agent_cmd(agent: &str, mode: &Mode) -> String {
         ("opencode", Mode::Continue) => " --continue".into(),
         ("opencode", Mode::New(Some(p))) => format!(" --prompt {}", sh_quote(p)),
         (_, Mode::Continue) => " --continue".into(),
+        ("codex", Mode::Resume(id)) => format!(" resume {}", sh_quote(id)),
+        ("opencode", Mode::Resume(id)) => format!(" --session {}", sh_quote(id)),
         (_, Mode::Resume(id)) => format!(" --resume {}", sh_quote(id)),
         (_, Mode::New(Some(p))) => format!(" {}", sh_quote(p)),
         _ => String::new(),
@@ -216,6 +218,8 @@ mod tests {
     #[test]
     fn agent_modes() {
         assert!(agent_cmd("claude", &Mode::Resume("abc")).ends_with(" --resume 'abc'"));
+        assert!(agent_cmd("codex", &Mode::Resume("abc")).ends_with(" resume 'abc'"));
+        assert!(agent_cmd("opencode", &Mode::Resume("ses_1")).ends_with(" --session 'ses_1'"));
         assert!(agent_cmd("codex", &Mode::Continue).ends_with(" resume --last"));
         assert!(agent_cmd("opencode", &Mode::New(Some("hi"))).ends_with(" --prompt 'hi'"));
         assert!(!agent_cmd("claude", &Mode::New(None)).contains("--"));
