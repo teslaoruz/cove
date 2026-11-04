@@ -476,6 +476,7 @@ fn refresh_settings(ui: &AppWindow) {
     ui.set_talkback(s.talkback);
     ui.set_auto_send(s.auto_send);
     ui.set_auto_update(s.auto_update);
+    ui.set_mail_on(s.mail);
     ui.set_update_note(ss(&if update::managed() {
         format!("Version {}. New versions come from GitHub and install in the background.", update::VERSION)
     } else {
@@ -962,12 +963,13 @@ fn main() {
             .select();
     }
     let ui = AppWindow::new().expect("window");
+    let brief = if settings.mail { desk::cached_brief() } else { None };
     let roots = Arc::new(Mutex::new(vec![]));
     ST.with(|s| *s.borrow_mut() = Some(State {
         s: settings, projects: vec![], colls: vec![], vault_idx: vec![], notes: HashMap::new(), art: serde_json::Value::Null,
         images: HashMap::new(), recent: vec![], days: HashMap::new(), agents: vec![], status: None, slots: vec![], cur: None,
         cur_actions: vec![], last_page: "home".into(), msgs: vec![], notice: None, choices: HashMap::new(),
-        sys_dark: platform::system_dark().unwrap_or(true), roots: roots.clone(), act_started: false, prompts: HashMap::new(), chat_sid: None, brief: desk::cached_brief(), desk: None, tween: slint::Timer::default(), mic: None, sys: None, speech: None, clips: Default::default(), voice_until: None, stopped: None, submit_timer: slint::Timer::default(), key: None, live: None, live_sent: 0, live_base: String::new(), voice_msg: false, talking: false, chats_all: false,
+        sys_dark: platform::system_dark().unwrap_or(true), roots: roots.clone(), act_started: false, prompts: HashMap::new(), chat_sid: None, brief, desk: None, tween: slint::Timer::default(), mic: None, sys: None, speech: None, clips: Default::default(), voice_until: None, stopped: None, submit_timer: slint::Timer::default(), key: None, live: None, live_sent: 0, live_base: String::new(), voice_msg: false, talking: false, chats_all: false,
     }));
     apply_theme(&ui);
     ui.global::<Theme>().set_mono(ss(&platform::mono_font()));
@@ -1157,8 +1159,9 @@ fn main() {
         }
     });
     cb!(on_set_flag, |ui, key: SharedString, on: bool| {
-        with(|st| { match key.as_str() { "talkback" => st.s.talkback = on, "auto-send" => st.s.auto_send = on, "auto-update" => st.s.auto_update = on, _ => return } save(st); });
+        with(|st| { match key.as_str() { "talkback" => st.s.talkback = on, "auto-send" => st.s.auto_send = on, "auto-update" => st.s.auto_update = on, "mail" => { st.s.mail = on; if !on { st.brief = None; } } _ => return } save(st); });
         if !on && key == "talkback" { with(hush); }
+        if key == "mail" { if on { fetch_mail(&ui); } else { show_desk(&ui); } }
         refresh_settings(&ui);
     });
     cb!(on_set_chat_dir, |ui, t: SharedString| {
@@ -1579,7 +1582,7 @@ fn show_mail(ui: &AppWindow) {
 
 /// Unread mail and the week's events via Claude Code's connectors; ~30 s, cached for an hour.
 fn fetch_mail(ui: &AppWindow) {
-    if ui.get_mail_busy() { return; }
+    if ui.get_mail_busy() || !with(|st| st.s.mail) { return; }
     ui.set_mail_busy(true);
     if with(|st| st.brief.is_none()) { ui.set_mail_note(ss("Checking mail…")); }
     let weak = ui.as_weak();

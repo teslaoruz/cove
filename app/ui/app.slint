@@ -292,6 +292,7 @@ export component AppWindow inherits Window {
     in property <bool> talkback;
     in property <bool> auto-send;
     in property <bool> auto-update;
+    in property <bool> mail-on;
     in property <string> update-note;
     in property <string> chat-folder;
     in property <string> voice-note;
@@ -358,7 +359,7 @@ export component AppWindow inherits Window {
     callback open-link(string);
     callback chat-menu(string, string);  // rename | delete, chat id
     callback rename-chat(string, string); // chat id, new name
-    callback set-flag(string, bool);     // talkback | auto-send | auto-update
+    callback set-flag(string, bool);     // talkback | auto-send | auto-update | mail
     callback set-chat-dir(string);
     callback test-voice();
     callback mode-changed(string);       // project idx, session id            // Rust eases home-y to -target
@@ -803,7 +804,7 @@ export component AppWindow inherits Window {
                                                 }
                                         }
                                     }
-                                    Widget { cache-rendering-hint: true; title: "Inbox"; icon: Icons.mail; tint: #3d9bff; rows: mail; note: mail-note; action: mail-busy ? "" : "Refresh"; action-clicked => { root.refresh-mail(); } row-clicked(r) => { root.desk-open(r); } }
+                                    if mail-on: Widget { cache-rendering-hint: true; title: "Inbox"; icon: Icons.mail; tint: #3d9bff; rows: mail; note: mail-note; action: mail-busy ? "" : "Refresh"; action-clicked => { root.refresh-mail(); } row-clicked(r) => { root.desk-open(r); } }
                                     Widget { cache-rendering-hint: true; title: "Notifications"; icon: Icons.bell; tint: #ff5c7c; rows: notifs; note: "Nothing new."; max-rows: 4; }
                                 }
                                 if wide: Rectangle {
@@ -1035,6 +1036,7 @@ cont(n) => { root.continue-project(n); }
                                     Row { Field { text: "Browser"; vertical-alignment: center; } ComboBox { max-width: 320px; model: browser-names; current-index: browser-index; selected => { root.set-choice("browser", self.current-index); } } }
                                     Row { Field { text: "File manager"; vertical-alignment: center; } ComboBox { max-width: 320px; model: files-names; current-index: files-index; selected => { root.set-choice("files", self.current-index); } } }
                                     Row { Field { text: "Updates"; vertical-alignment: center; } Switch { text: "Install new versions automatically"; checked: auto-update; toggled => { root.set-flag("auto-update", self.checked); } } }
+                                    Row { Field { text: "Inbox"; vertical-alignment: center; } Switch { text: "Show unread mail and events (asks Claude Code)"; checked: mail-on; toggled => { root.set-flag("mail", self.checked); } } }
                                 }
                                 Text { text: update-note; color: Theme.faint; font-size: Theme.t-small; wrap: word-wrap; }
                             }

@@ -125,6 +125,7 @@ Under **Settings → Apps**, choose:
 | **Code editor** | VS Code, VSCodium, Cursor, Zed, Sublime Text, Neovim or IntelliJ IDEA. |
 | **Browser / File manager** | Leave them on *System default*, or pick one. |
 | **Updates** | On by default. See [Updates](#updates). |
+| **Inbox** | Off by default. Turn it on to see unread mail and upcoming events on the home screen. |
 
 ### 5. Open a project
 
@@ -140,6 +141,7 @@ You can also type a project's name in the box and press Enter.
 
 - **`git`** shows each project's branch and uncommitted changes.
 - **[GitHub CLI](https://cli.github.com)**: run `gh auth login` once, and **Activity** also shows your GitHub contributions.
+- **Inbox**: turn on **Settings → Apps → Inbox** to see unread Gmail and upcoming Google Calendar events on the home screen. It needs Claude Code with the Gmail and Google Calendar connectors.
 - **Obsidian vault**: if you keep a note per project, point **Settings → Notes vault** at it. Cove then shows each project's description and open to-dos.
 
 ## Features
@@ -176,7 +178,7 @@ Copies you build from source never update themselves.
 - Cove reads Claude Code's session history from `~/.claude/projects/`, or from `CLAUDE_CONFIG_DIR` if you set it. It never edits or deletes your project sessions. Only Cove's own chats can be renamed or deleted from inside Cove.
 - Agents run with your own login. Cove has no account, no telemetry and no server of its own.
 - Cove makes one network request of its own: the daily update check, which goes to GitHub. Some widgets run your own tools in the background:
-  - **Inbox** asks `claude` (Haiku model, read-only Gmail and Google Calendar connectors) for unread mail and upcoming events, at most every 3 hours.
+  - **Inbox** asks `claude` (Haiku model, read-only Gmail and Google Calendar connectors) for unread mail and upcoming events, at most every 3 hours. It is off until you turn it on.
   - **Activity** asks `gh` for your GitHub contributions.
   - Plain-language requests that Cove can't match by itself go to `claude` once.
 

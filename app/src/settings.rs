@@ -38,6 +38,7 @@ pub struct Settings {
     pub voice: String,        // Kokoro voice, e.g. af_heart
     pub voice_speed: f32,     // 1 = normal
     pub auto_update: bool,    // install new releases by itself (installed copies only)
+    pub mail: bool,           // Inbox: ask claude for unread mail and events; off until the user turns it on
 }
 
 impl Default for Settings {
@@ -64,6 +65,7 @@ impl Default for Settings {
             voice: "af_heart".into(),
             voice_speed: 1.0,
             auto_update: true,
+            mail: false,
         }
     }
 }
