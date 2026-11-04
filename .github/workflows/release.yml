@@ -75,6 +75,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # installed copies compare their own version with the newest tag, so the two must agree
+      - name: Tag matches Cargo.toml version
+        run: test "${GITHUB_REF_NAME#v}" = "$(grep -m1 '^version' app/Cargo.toml | cut -d'"' -f2)"
       - uses: actions/download-artifact@v4
         with:
           path: dist

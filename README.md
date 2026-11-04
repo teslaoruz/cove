@@ -174,7 +174,11 @@ Copies you build from source never update themselves.
 | Cache | `%LOCALAPPDATA%\cove\` | `~/.cache/cove/` |
 
 - Cove reads Claude Code's session history from `~/.claude/projects/`, or from `CLAUDE_CONFIG_DIR` if you set it. It never edits or deletes your project sessions. Only Cove's own chats can be renamed or deleted from inside Cove.
-- Agents run with your own login. Cove has no account, no telemetry and no server. The only network request it makes itself is the daily update check, which goes to GitHub.
+- Agents run with your own login. Cove has no account, no telemetry and no server of its own.
+- Cove makes one network request of its own: the daily update check, which goes to GitHub. Some widgets run your own tools in the background:
+  - **Inbox** asks `claude` (Haiku model, read-only Gmail and Google Calendar connectors) for unread mail and upcoming events, at most every 3 hours.
+  - **Activity** asks `gh` for your GitHub contributions.
+  - Plain-language requests that Cove can't match by itself go to `claude` once.
 
 ## Uninstall
 

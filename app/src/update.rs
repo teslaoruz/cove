@@ -56,14 +56,20 @@ fn latest_tag() -> Option<String> {
 /// Run the installer of release `tag`. True once it has finished without error.
 fn install(tag: &str) -> bool {
     let base = format!("https://github.com/{REPO}/releases/download/{tag}");
-    if cfg!(windows) {
-        let ps = format!("& {{ $ErrorActionPreference = 'Stop'; irm '{base}/install.ps1' | iex }}");
-        return cmd("powershell").args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps]).status().is_ok_and(|s| s.success());
-    }
+    let name = if cfg!(windows) { "install.ps1" } else { "install.sh" };
     // download first, so a failed download is not mistaken for a finished install
-    let script = std::env::temp_dir().join(format!("cove-install-{}.sh", std::process::id()));
-    let ok = cmd("curl").args(["-fsSL", "--max-time", "120", "-o"]).arg(&script).arg(format!("{base}/install.sh")).status().is_ok_and(|s| s.success())
-        && cmd("sh").arg(&script).env("COVE_VERSION", tag).status().is_ok_and(|s| s.success());
+    let script = std::env::temp_dir().join(format!("cove-{}-{name}", std::process::id()));
+    let got = cmd("curl").args(["-fsSL", "--max-time", "120", "-o"]).arg(&script).arg(format!("{base}/{name}")).status().is_ok_and(|s| s.success());
+    let mut run = if cfg!(windows) {
+        let mut c = cmd("powershell");
+        c.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]).arg(&script);
+        c
+    } else {
+        let mut c = cmd("sh");
+        c.arg(&script);
+        c
+    };
+    let ok = got && run.env("COVE_VERSION", tag).status().is_ok_and(|s| s.success());
     let _ = std::fs::remove_file(&script);
     ok
 }
