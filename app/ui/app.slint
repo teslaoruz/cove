@@ -1279,13 +1279,22 @@ cont(n) => { root.continue-project(n); }
                         x: 24px;
                         y: 82px;
                         width: Math.min(parent.width - 48px, 640px);
-                        height: self.preferred-height;
-                        VerticalLayout {
-                            padding: 12px;
-                            padding-left: 16px;
-                            padding-right: 44px;
-                            spacing: 6px;
-                            for m in msgs: Bubble { text: m.text; user: m.user; blocks: m.blocks; copy(t) => { root.copy-text(t); } link(u) => { root.open-link(u); } speak(t) => { root.read-aloud(t); } }
+                        height: Math.min(reply-col.preferred-height, parent.height - 82px - 24px); // long replies scroll inside
+                        background: Theme.solid; // opaque: the page underneath must not show through the text
+                        reply-sv := ScrollView {
+                            width: parent.width;
+                            height: parent.height;
+                            content-width: self.visible-width;
+                            content-height: reply-col.preferred-height;
+                            changed content-height => { self.content-y = Math.min(0px, self.visible-height - self.content-height); } // newest at the bottom
+                            reply-col := VerticalLayout {
+                                width: reply-sv.visible-width;
+                                padding: 12px;
+                                padding-left: 16px;
+                                padding-right: 44px;
+                                spacing: 6px;
+                                for m in msgs: Bubble { text: m.text; user: m.user; blocks: m.blocks; copy(t) => { root.copy-text(t); } link(u) => { root.open-link(u); } speak(t) => { root.read-aloud(t); } }
+                            }
                         }
                         Btn { x: parent.width - self.width - 6px; y: 6px; icon: Icons.close; quiet: true; tip: "Close"; clicked => { reply-open = false; } }
                     }
