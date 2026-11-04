@@ -36,18 +36,19 @@
         Copy-Item "$tmp\x\cove\*" $dir -Recurse -Force
 
         # Start menu entries. Their shortcut keys work anywhere in Windows; a key the user changed is kept on update.
+        # F-keys, because AltGr is Ctrl+Alt: Ctrl+Alt+<letter> would swallow letters such as ł or ć on some layouts.
         $menu = [Environment]::GetFolderPath('Programs')
         $shell = New-Object -ComObject WScript.Shell
         foreach ($entry in @(
-            @{ Name = 'Cove.lnk'; Args = ''; Key = 'CTRL+ALT+C'; Text = 'Your projects and coding agents in one place' },
-            @{ Name = 'Cove - Listen.lnk'; Args = '--listen'; Key = 'CTRL+ALT+L'; Text = 'Bring up Cove and start listening' }
+            @{ Name = 'Cove.lnk'; Args = ''; Key = 'CTRL+ALT+F9'; Text = 'Your projects and coding agents in one place' },
+            @{ Name = 'Cove - Listen.lnk'; Args = '--listen'; Key = 'CTRL+ALT+F10'; Text = 'Bring up Cove and start listening' }
         )) {
             $shortcut = $shell.CreateShortcut((Join-Path $menu $entry.Name))
             $shortcut.TargetPath = $exe
             $shortcut.Arguments = $entry.Args
             $shortcut.WorkingDirectory = $dir
             $shortcut.Description = $entry.Text
-            if (-not $shortcut.Hotkey) { $shortcut.Hotkey = $entry.Key }
+            if (-not $shortcut.Hotkey) { try { $shortcut.Hotkey = $entry.Key } catch { } } # a refused key must never fail an update
             $shortcut.Save()
         }
 
@@ -55,7 +56,7 @@
         if (($path -split ';') -notcontains $dir) {
             [Environment]::SetEnvironmentVariable('Path', ((@($path, $dir) | Where-Object { $_ }) -join ';'), 'User')
         }
-        Write-Host 'Cove is installed. Start it from the Start menu, press Ctrl+Alt+C, or run "cove" in a new terminal. Ctrl+Alt+L starts listening.'
+        Write-Host 'Cove is installed. Start it from the Start menu, press Ctrl+Alt+F9, or run "cove" in a new terminal. Ctrl+Alt+F10 starts listening.'
     } finally {
         Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }

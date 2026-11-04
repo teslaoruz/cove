@@ -64,6 +64,18 @@ jobs:
           Copy-Item target/release/cove.exe, ../LICENSE pkg/cove/
           Compress-Archive -Path pkg/cove -DestinationPath ${{ matrix.asset }}
 
+      # the installer gives its Start menu shortcuts these keys; check Windows accepts them before any release
+      - name: Shortcut keys are accepted (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $s = (New-Object -ComObject WScript.Shell).CreateShortcut("$env:TEMP\cove-key-test.lnk")
+          $s.TargetPath = "$env:SystemRoot\notepad.exe"
+          foreach ($k in 'CTRL+ALT+F9', 'CTRL+ALT+F10') {
+            $s.Hotkey = $k
+            if ($s.Hotkey -notmatch ($k.Split('+')[-1] + '$')) { throw "Windows read back '$($s.Hotkey)' for $k" }
+          }
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}

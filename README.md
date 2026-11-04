@@ -312,8 +312,8 @@ To bind a key that only brings Cove to the front, use `cove` without `--listen`.
 
 | Key | Action |
 | --- | --- |
-| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd> | Open Cove, or bring it to the front |
-| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>L</kbd> | Bring up Cove and start listening; press again to stop |
+| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F9</kbd> | Open Cove, or bring it to the front |
+| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F10</kbd> | Bring up Cove; with Cove in front, start listening; press again to stop |
 
 To change a key:
 1. Open the Start menu and find **Cove** or **Cove - Listen**.
@@ -322,7 +322,7 @@ To change a key:
 
 Updates keep the key you chose.
 
-To use a single key such as the **Copilot key**, install [PowerToys](https://learn.microsoft.com/windows/powertoys/install). In **Keyboard Manager → Remap a shortcut**, map that key to <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>L</kbd>.
+To use a single key such as the **Copilot key**, install [PowerToys](https://learn.microsoft.com/windows/powertoys/install). In **Keyboard Manager → Remap a shortcut**, map that key to <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F10</kbd>.
 
 ### Inbox
 
@@ -418,7 +418,7 @@ Cove isn't code-signed yet, so SmartScreen may warn the first time it runs. Clic
 
 <br>
 
-Cove lists the folders directly inside each project folder. Check **Settings → Project folders**, or run `cove --list` in a terminal to see what Cove finds. Projects that you started agents in from somewhere else also appear, under *Other*.
+Cove lists the folders directly inside each project folder. Check **Settings → Project folders**, or, on Linux, run `cove --list` in a terminal to see what Cove finds. Projects that you started agents in from somewhere else also appear, under *Other*.
 
 </details>
 
@@ -447,6 +447,13 @@ Not yet. The code has macOS paths in place, but there is no tested build. Contri
 - **Talk mode is Linux-only** for now. On Windows, use Handy for dictation. Spoken replies use the Windows voice.
 - **Glass** (see-through window) uses Mica on Windows. On Linux, it needs a compositor that blurs, such as KDE Plasma, Hyprland or niri.
 - **Chat extras are for Claude Code.** Renaming a chat and turning a chat into a project work with Claude Code. With opencode you can also delete chats. Chat needs Claude Code, Codex or opencode.
+- **Not yet tried on a real machine:**
+  - The flags for Gemini CLI, Copilot CLI, Cursor CLI, Qwen Code, Aider and Goose come from their docs.
+  - Local models through Ollama.
+  - The Windows shortcut keys, and Windows self-update.
+  - The rule that keeps opencode chat to web tools only.
+  
+  Please [open an issue](https://github.com/teslaoruz/cove/issues) if one misbehaves.
 - **Windows is newer than Linux.** Each release is built and installed on Windows in CI. If something doesn't feel right, please [open an issue](https://github.com/teslaoruz/cove/issues).
 
 ## Build from source

@@ -998,7 +998,8 @@ fn main() {
     ipc::serve(move |msg| {
         let _ = w_ipc.upgrade_in_event_loop(move |ui| match msg.as_str() {
             "listen" => listen_key(&ui),
-            _ => focus_self(),
+            "show" => focus_self(),
+            _ => {} // anything else (on Windows a local port, which a web page could also reach) is ignored
         });
     });
 
