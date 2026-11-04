@@ -498,73 +498,83 @@ export component AppWindow inherits Window {
                     NavItem { text: "Home"; icon: Icons.home; badge: agents.length; active: sec == "home"; compact: side-compact; clicked => { root.go("home", ""); root.scroll-section("home"); } }
                     NavItem { text: "Activity"; icon: Icons.chart; active: sec == "activity"; compact: side-compact; clicked => { root.go("home", ""); root.scroll-section("activity"); } }
                     NavItem { text: "All projects"; icon: Icons.grid; count: project-count; active: sec == "list" || nav == "list"; compact: side-compact; clicked => { root.go("home", ""); root.scroll-section("list"); } }
-                    if pinned-items.length > 0 && !side-compact: SideHead { text: "Pinned"; }
-                    if pinned-items.length > 0 && side-compact: Rectangle { height: 14px; }
-                    for p in pinned-items: NavItem {
-                        text: p.name;
-                        has-project: true;
-                        project: p;
-                        compact: side-compact;
-                        clicked => { root.show-project(p.idx); }
-                    }
-                    if !side-compact: SideHead { text: "Collections"; }
-                    if side-compact: Rectangle { height: 14px; }
-                    for c in colls: NavItem {
-                        text: c.name;
-                        hue: c.hue;
-                        count: c.count;
-                        active: nav == "coll:" + c.name;
-                        compact: side-compact;
-                        clicked => { root.go("coll", c.name); }
-                    }
-                    // chats: conversations with the assistant, kept apart from projects
-                    if !side-compact: HorizontalLayout {
-                        height: 30px;
-                        SideHead { text: "Chats"; horizontal-stretch: 1; }
-                        Rectangle {
-                            y: 8px;
-                            width: 22px;
-                            height: 22px;
-                            border-radius: 6px;
-                            background: nc-ta.has-hover ? Theme.panel : transparent;
-                            accessible-role: button;
-                            accessible-label: "New chat";
-                            accessible-action-default => { root.new-chat(); }
-                            nc-ta := TouchArea { mouse-cursor: pointer; clicked => { root.new-chat(); } }
-                            Icon { d: Icons.plus; size: 14px; color: Theme.faint; }
+                    // pinned, collections and chats scroll when they outgrow the window
+                    side-sv := ScrollView {
+                        vertical-stretch: 1;
+                        content-width: self.visible-width;
+                        content-height: side-col.preferred-height;
+                        side-col := VerticalLayout {
+                            width: side-sv.visible-width;
+                            spacing: 1px;
+                            alignment: start;
+                            if pinned-items.length > 0 && !side-compact: SideHead { text: "Pinned"; }
+                            if pinned-items.length > 0 && side-compact: Rectangle { height: 14px; }
+                            for p in pinned-items: NavItem {
+                                text: p.name;
+                                has-project: true;
+                                project: p;
+                                compact: side-compact;
+                                clicked => { root.show-project(p.idx); }
+                            }
+                            if !side-compact: SideHead { text: "Collections"; }
+                            if side-compact: Rectangle { height: 14px; }
+                            for c in colls: NavItem {
+                                text: c.name;
+                                hue: c.hue;
+                                count: c.count;
+                                active: nav == "coll:" + c.name;
+                                compact: side-compact;
+                                clicked => { root.go("coll", c.name); }
+                            }
+                            // chats: conversations with the assistant, kept apart from projects
+                            if !side-compact: HorizontalLayout {
+                                height: 30px;
+                                SideHead { text: "Chats"; horizontal-stretch: 1; }
+                                Rectangle {
+                                    y: 8px;
+                                    width: 22px;
+                                    height: 22px;
+                                    border-radius: 6px;
+                                    background: nc-ta.has-hover ? Theme.panel : transparent;
+                                    accessible-role: button;
+                                    accessible-label: "New chat";
+                                    accessible-action-default => { root.new-chat(); }
+                                    nc-ta := TouchArea { mouse-cursor: pointer; clicked => { root.new-chat(); } }
+                                    Icon { d: Icons.plus; size: 14px; color: Theme.faint; }
+                                }
+                            }
+                            if side-compact: Rectangle { height: 14px; }
+                            if side-compact: NavItem { text: "New chat"; icon: Icons.chat; compact: true; clicked => { root.new-chat(); } }
+                            for c in chats: NavItem {
+                                text: c.title;
+                                icon: Icons.chat;
+                                active: mode == "chat" && chat-id == c.id;
+                                compact: side-compact;
+                                has-menu: true;
+                                clicked => { root.open-chat(c.id); }
+                                menu => {
+                                    cm-id = c.id;
+                                    cm-title = c.title;
+                                    cm-y = self.absolute-position.y - root.absolute-position.y + self.height;
+                                    chat-pop.show();
+                                }
+                            }
+                            if !side-compact && (chats-more > 0 || chats-all): Rectangle {
+                                height: 26px;
+                                accessible-role: button;
+                                accessible-label: more-t.text;
+                                accessible-action-default => { root.toggle-chats(); }
+                                more-ta := TouchArea { mouse-cursor: pointer; clicked => { root.toggle-chats(); } }
+                                more-t := Text {
+                                    x: 36px;
+                                    text: chats-all ? "Show fewer" : "Show " + chats-more + " more";
+                                    color: more-ta.has-hover ? Theme.soft : Theme.faint;
+                                    font-size: 12px;
+                                    vertical-alignment: center;
+                                }
+                            }
                         }
                     }
-                    if side-compact: Rectangle { height: 14px; }
-                    if side-compact: NavItem { text: "New chat"; icon: Icons.chat; compact: true; clicked => { root.new-chat(); } }
-                    for c in chats: NavItem {
-                        text: c.title;
-                        icon: Icons.chat;
-                        active: mode == "chat" && chat-id == c.id;
-                        compact: side-compact;
-                        has-menu: true;
-                        clicked => { root.open-chat(c.id); }
-                        menu => {
-                            cm-id = c.id;
-                            cm-title = c.title;
-                            cm-y = self.absolute-position.y - root.absolute-position.y + self.height;
-                            chat-pop.show();
-                        }
-                    }
-                    if !side-compact && (chats-more > 0 || chats-all): Rectangle {
-                        height: 26px;
-                        accessible-role: button;
-                        accessible-label: more-t.text;
-                        accessible-action-default => { root.toggle-chats(); }
-                        more-ta := TouchArea { mouse-cursor: pointer; clicked => { root.toggle-chats(); } }
-                        more-t := Text {
-                            x: 36px;
-                            text: chats-all ? "Show fewer" : "Show " + chats-more + " more";
-                            color: more-ta.has-hover ? Theme.soft : Theme.faint;
-                            font-size: 12px;
-                            vertical-alignment: center;
-                        }
-                    }
-                    Rectangle { vertical-stretch: 1; }
                     // usage
                     if has-usage && !side-compact: VerticalLayout {
                         vertical-stretch: 0;
