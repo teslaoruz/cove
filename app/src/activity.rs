@@ -64,7 +64,7 @@ pub struct Activity {
 }
 
 /// Read every session log, reusing the cache for files that have not changed.
-// shortcut: hours are cached in the time zone they were read in; delete ~/.cache/project-hub/activity.json after moving zones.
+// shortcut: hours are cached in the time zone they were read in; delete ~/.cache/cove/activity.json after moving zones.
 pub fn load(projects: &[Project]) -> Activity {
     let cache_path = cache_dir().join("activity.json");
     let old: HashMap<String, FileStat> = fs::read_to_string(&cache_path).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();

@@ -1,4 +1,4 @@
-//! User settings, stored as JSON in the platform config dir (e.g. ~/.config/project-hub/settings.json).
+//! User settings, stored as JSON in the platform config dir (e.g. ~/.config/cove/settings.json).
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -37,6 +37,7 @@ pub struct Settings {
     pub voice_engine: String, // auto | kokoro | piper | espeak
     pub voice: String,        // Kokoro voice, e.g. af_heart
     pub voice_speed: f32,     // 1 = normal
+    pub auto_update: bool,    // install new releases by itself (installed copies only)
 }
 
 impl Default for Settings {
@@ -62,6 +63,7 @@ impl Default for Settings {
             voice_engine: "auto".into(),
             voice: "af_heart".into(),
             voice_speed: 1.0,
+            auto_update: true,
         }
     }
 }
@@ -77,11 +79,17 @@ fn default_scan_dirs(home: &Path) -> Vec<ScanDir> {
 }
 
 pub fn config_dir() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("project-hub")
+    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    let dir = base.join("cove");
+    let old = base.join("project-hub"); // the app's name before 0.2
+    if !dir.exists() && old.is_dir() {
+        let _ = std::fs::rename(&old, &dir);
+    }
+    dir
 }
 
 pub fn cache_dir() -> PathBuf {
-    dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("project-hub")
+    dirs::cache_dir().unwrap_or_else(std::env::temp_dir).join("cove")
 }
 
 /// The Python app's config folder; its actions.json / art.json / projects.json are still read.

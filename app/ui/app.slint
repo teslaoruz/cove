@@ -149,7 +149,7 @@ component Field inherits Text {
 }
 
 export component AppWindow inherits Window {
-    title: "Project Hub";
+    title: "Cove";
     icon: @image-url("../../assets/claude-launcher.svg");
     preferred-width: 1280px;
     preferred-height: 820px;
@@ -291,6 +291,8 @@ export component AppWindow inherits Window {
     in property <int> speed-index;
     in property <bool> talkback;
     in property <bool> auto-send;
+    in property <bool> auto-update;
+    in property <string> update-note;
     in property <string> chat-folder;
     in property <string> voice-note;
     // overlays
@@ -356,7 +358,7 @@ export component AppWindow inherits Window {
     callback open-link(string);
     callback chat-menu(string, string);  // rename | delete, chat id
     callback rename-chat(string, string); // chat id, new name
-    callback set-flag(string, bool);     // talkback | auto-send
+    callback set-flag(string, bool);     // talkback | auto-send | auto-update
     callback set-chat-dir(string);
     callback test-voice();
     callback mode-changed(string);       // project idx, session id            // Rust eases home-y to -target
@@ -482,7 +484,7 @@ export component AppWindow inherits Window {
                             alignment: center;
                             horizontal-stretch: 1;
                             spacing: 1px;
-                            Text { text: "Project Hub"; color: Theme.ink; font-size: 14px; font-weight: 700; }
+                            Text { text: "Cove"; color: Theme.ink; font-size: 14px; font-weight: 700; }
                             Text { text: project-count + " projects"; color: Theme.faint; font-size: 11px; }
                         }
                         if !side-compact: HorizontalLayout {
@@ -1032,7 +1034,9 @@ cont(n) => { root.continue-project(n); }
                                     Row { Field { text: "Code editor"; vertical-alignment: center; } ComboBox { max-width: 320px; model: editor-names; current-index: editor-index; selected => { root.set-choice("editor", self.current-index); } } }
                                     Row { Field { text: "Browser"; vertical-alignment: center; } ComboBox { max-width: 320px; model: browser-names; current-index: browser-index; selected => { root.set-choice("browser", self.current-index); } } }
                                     Row { Field { text: "File manager"; vertical-alignment: center; } ComboBox { max-width: 320px; model: files-names; current-index: files-index; selected => { root.set-choice("files", self.current-index); } } }
+                                    Row { Field { text: "Updates"; vertical-alignment: center; } Switch { text: "Install new versions automatically"; checked: auto-update; toggled => { root.set-flag("auto-update", self.checked); } } }
                                 }
+                                Text { text: update-note; color: Theme.faint; font-size: Theme.t-small; wrap: word-wrap; }
                             }
                         }
                         if page == "settings": Panel {

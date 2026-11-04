@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Cove
+GenericName=Project Launcher
+Comment=Your projects and coding agents in one place
+Exec=cove
+Icon=cove
+Terminal=false
+Categories=Development;
+Keywords=projects;claude;codex;opencode;agent;
+StartupWMClass=cove

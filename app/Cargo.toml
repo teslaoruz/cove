@@ -1,10 +1,10 @@
 [package]
-name = "project-hub"
-version = "0.1.0"
+name = "cove"
+version = "0.2.0"
 edition = "2021"
 description = "Desktop launcher that lists your code projects and opens each one with a coding agent (Claude Code, Codex, opencode)"
 license = "MIT"
-repository = "https://github.com/teslaoruz/project-hub"
+repository = "https://github.com/teslaoruz/cove"
 
 [dependencies]
 slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "accessibility", "image-default-formats", "unstable-winit-030"] }

@@ -3,6 +3,7 @@
 
 mod activity;
 mod asr;
+mod update;
 mod chat;
 mod desk;
 mod info;
@@ -474,6 +475,12 @@ fn refresh_settings(ui: &AppWindow) {
     ui.set_voice_enabled(kokoro && (s.voice_engine == "kokoro" || s.voice_engine == "auto"));
     ui.set_talkback(s.talkback);
     ui.set_auto_send(s.auto_send);
+    ui.set_auto_update(s.auto_update);
+    ui.set_update_note(ss(&if update::managed() {
+        format!("Version {}. New versions come from GitHub and install in the background.", update::VERSION)
+    } else {
+        format!("Version {}. This copy was not installed with the installer, so it does not update itself.", update::VERSION)
+    }));
     ui.set_chat_folder(ss(&s.chat_dir));
     ui.set_voice_note(ss(&voice_note(kokoro)));
     ui.set_theme_index(THEMES.iter().position(|t| *t == s.theme).unwrap_or(0) as i32);
@@ -505,9 +512,9 @@ fn voice_note(kokoro: bool) -> String {
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
         .and_then(|v| v["settings"]["selected_model"].as_str().map(str::to_string));
     let input = match (launch::which("handy").is_some(), model) {
-        _ if asr::installed().is_some() => "Voice: press the Copilot key with the hub in front to talk; words appear as you speak, each pause sends, replies are read aloud, and it keeps listening until you press the key again. When the hub is not in front, the key only brings it up. Speech to text: Parakeet in ~/.local/share/asr.".to_string(),
+        _ if asr::installed().is_some() => "Voice: press the Copilot key with Cove in front to talk; words appear as you speak, each pause sends, replies are read aloud, and it keeps listening until you press the key again. When Cove is not in front, the key only brings it up. Speech to text: Parakeet in ~/.local/share/asr.".to_string(),
         (false, _) => "Voice input needs Handy (handy.computer).".to_string(),
-        (true, m) => format!("Voice input: Handy{}. Press the Copilot key to talk; press it again to stop. It brings the hub to the front.", m.map(|m| format!(" with {m}")).unwrap_or_default()),
+        (true, m) => format!("Voice input: Handy{}. Press the Copilot key to talk; press it again to stop. It brings Cove to the front.", m.map(|m| format!(" with {m}")).unwrap_or_default()),
     };
     let output = if kokoro { " Kokoro lives in ~/.local/share/kokoro." } else { " For a natural voice, put sherpa-onnx and a Kokoro model in ~/.local/share/kokoro." };
     format!("{input}{output} Changing the chat folder starts a fresh chat list; older chats stay in the old folder.")
@@ -949,8 +956,8 @@ fn main() {
         use slint::winit_030::winit::platform::{wayland::WindowAttributesExtWayland, x11::WindowAttributesExtX11};
         let _ = slint::BackendSelector::new()
             .with_winit_window_attributes_hook(|a| {
-                let a = WindowAttributesExtWayland::with_name(a, "local.claude.launcher", "");
-                WindowAttributesExtX11::with_name(a, "local.claude.launcher", "project-hub")
+                let a = WindowAttributesExtWayland::with_name(a, "cove", "");
+                WindowAttributesExtX11::with_name(a, "cove", "cove")
             })
             .select();
     }
@@ -970,6 +977,12 @@ fn main() {
         fetch_mail(&ui);
     }
     rescan(&ui);
+    update::clean_up();
+    let w_up = ui.as_weak();
+    update::watch(
+        || Settings::load().auto_update,
+        move |tag| { let _ = w_up.upgrade_in_event_loop(move |ui| say(&ui, &format!("Cove {tag} is installed. Restart Cove to use it."))); },
+    );
     refresh_settings(&ui); // fills the sidebar's agent picker too
     let w_ipc = ui.as_weak();
     ipc::serve(move |msg| {
@@ -1144,7 +1157,7 @@ fn main() {
         }
     });
     cb!(on_set_flag, |ui, key: SharedString, on: bool| {
-        with(|st| { match key.as_str() { "talkback" => st.s.talkback = on, "auto-send" => st.s.auto_send = on, _ => return } save(st); });
+        with(|st| { match key.as_str() { "talkback" => st.s.talkback = on, "auto-send" => st.s.auto_send = on, "auto-update" => st.s.auto_update = on, _ => return } save(st); });
         if !on && key == "talkback" { with(hush); }
         refresh_settings(&ui);
     });

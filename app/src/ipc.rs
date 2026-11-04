@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 fn path() -> PathBuf {
-    dirs::runtime_dir().unwrap_or_else(std::env::temp_dir).join("project-hub.sock")
+    dirs::runtime_dir().unwrap_or_else(std::env::temp_dir).join("cove.sock")
 }
 
 /// Hand `msg` to a running hub. True if one took it.

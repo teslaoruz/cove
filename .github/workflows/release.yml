@@ -1,6 +1,7 @@
 name: build
 
-# Every push to main checks that Linux and Windows build. A tag like v0.2.0 also publishes a release.
+# Every push to main checks that Linux and Windows build. A tag like v0.3.0 also publishes a release,
+# then installs it on fresh Linux and Windows machines with the one-line installers.
 on:
   push:
     branches: [main]
@@ -19,9 +20,9 @@ jobs:
         include:
           # 22.04 keeps the glibc requirement low, so the binary runs on older distros too
           - os: ubuntu-22.04
-            asset: project-hub-linux-x86_64.tar.gz
+            asset: cove-linux-x86_64.tar.gz
           - os: windows-latest
-            asset: project-hub-windows-x86_64.zip
+            asset: cove-windows-x86_64.zip
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -50,18 +51,18 @@ jobs:
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: |
-          mkdir -p pkg/project-hub
-          cp target/release/project-hub dist/install.sh dist/project-hub.desktop ../LICENSE pkg/project-hub/
-          cp ../assets/claude-launcher.svg pkg/project-hub/project-hub.svg
-          tar -C pkg -czf ${{ matrix.asset }} project-hub
+          mkdir -p pkg/cove
+          cp target/release/cove dist/install.sh dist/cove.desktop ../LICENSE pkg/cove/
+          cp ../assets/cove.svg pkg/cove/
+          tar -C pkg -czf ${{ matrix.asset }} cove
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force pkg/project-hub | Out-Null
-          Copy-Item target/release/project-hub.exe, ../LICENSE pkg/project-hub/
-          Compress-Archive -Path pkg/project-hub -DestinationPath ${{ matrix.asset }}
+          New-Item -ItemType Directory -Force pkg/cove | Out-Null
+          Copy-Item target/release/cove.exe, ../LICENSE pkg/cove/
+          Compress-Archive -Path pkg/cove -DestinationPath ${{ matrix.asset }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -73,12 +74,55 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
+          path: dist
           merge-multiple: true
+      - name: Checksums and installers
+        run: |
+          cp install.sh install.ps1 dist/
+          cd dist && sha256sum cove-linux-x86_64.tar.gz cove-windows-x86_64.zip > SHA256SUMS && cat SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            project-hub-linux-x86_64.tar.gz
-            project-hub-windows-x86_64.zip
+            dist/cove-linux-x86_64.tar.gz
+            dist/cove-windows-x86_64.zip
+            dist/SHA256SUMS
+            dist/install.sh
+            dist/install.ps1
           generate_release_notes: true
+
+  # install the published release the way users do, on clean machines
+  install-test:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      COVE_VERSION: ${{ github.ref_name }}
+    steps:
+      - name: Linux one-liner
+        if: runner.os == 'Linux'
+        run: |
+          curl -fsSL "https://github.com/${{ github.repository }}/releases/download/$COVE_VERSION/install.sh" | sh
+          test -x ~/.local/bin/cove
+          test -f ~/.local/share/applications/cove.desktop
+          ~/.local/bin/cove --list
+          # a second run is an update and must also work
+          curl -fsSL "https://github.com/${{ github.repository }}/releases/download/$COVE_VERSION/install.sh" | sh
+
+      - name: Windows one-liner (Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          irm "https://github.com/${{ github.repository }}/releases/download/$env:COVE_VERSION/install.ps1" | iex
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\Cove'
+          if (-not (Test-Path "$dir\cove.exe")) { throw 'cove.exe missing' }
+          if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'Cove.lnk'))) { throw 'Start menu shortcut missing' }
+          if (([Environment]::GetEnvironmentVariable('Path', 'User') -split ';') -notcontains $dir) { throw 'not on PATH' }
+          # a second run is an update and must also work
+          irm "https://github.com/${{ github.repository }}/releases/download/$env:COVE_VERSION/install.ps1" | iex
+          if (-not (Test-Path "$dir\cove.exe")) { throw 'cove.exe missing after update' }
