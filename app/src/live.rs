@@ -14,11 +14,19 @@ pub struct Agent {
     pub window: Option<String>,
 }
 
-const TOOLS: &[&str] = &["claude", "codex", "opencode"];
-
 fn tool_of(name: &str) -> Option<&'static str> {
     let n = name.trim_end_matches(".exe");
-    TOOLS.iter().copied().find(|t| *t == n)
+    crate::launch::AGENTS.iter().map(|a| a.0).find(|t| *t == n)
+}
+
+/// The agent a process runs: by its own name, or for agents written in JavaScript or Python (Gemini CLI, Copilot,
+/// Aider…) by the script the runtime was started with.
+fn tool_of_process(name: &str, cmd: &[std::ffi::OsString]) -> Option<&'static str> {
+    tool_of(name).or_else(|| {
+        let runtime = ["node", "bun", "python", "python3"].iter().any(|r| name.trim_end_matches(".exe").starts_with(r));
+        let script = std::path::Path::new(cmd.get(1)?).file_stem()?.to_string_lossy().into_owned();
+        runtime.then(|| tool_of(&script)).flatten()
+    })
 }
 
 /// Longest project root containing `cwd`.
@@ -91,7 +99,7 @@ impl Watcher {
 
     /// Agents running inside one of `roots` (the home folder excluded).
     pub fn scan(&mut self, roots: &[String], home: &str) -> (Vec<Agent>, Option<Value>) {
-        self.sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_cwd(UpdateKind::OnlyIfNotSet).with_cpu());
+        self.sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing().with_cwd(UpdateKind::OnlyIfNotSet).with_cmd(UpdateKind::OnlyIfNotSet).with_cpu());
         let status = bloom_status();
         let states: HashMap<u32, String> = status.as_ref().and_then(|s| s["sessions"].as_array().cloned()).unwrap_or_default().iter()
             .filter_map(|s| Some((s["pid"].as_u64().or_else(|| s["pid"].as_str()?.parse().ok())? as u32, s["state"].as_str().unwrap_or("idle").to_string())))
@@ -99,7 +107,7 @@ impl Watcher {
         let wins = windows();
         let mut out = vec![];
         for (pid, p) in self.sys.processes() {
-            let Some(tool) = tool_of(&p.name().to_string_lossy()) else { continue };
+            let Some(tool) = tool_of_process(&p.name().to_string_lossy(), p.cmd()) else { continue };
             let Some(cwd) = p.cwd() else { continue };
             let cwd = norm(&cwd.to_string_lossy());
             let Some(root) = project_of(&cwd, roots) else { continue };
@@ -133,6 +141,14 @@ impl Watcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn finds_agents_run_by_node() {
+        let cmd = |v: &[&str]| v.iter().map(std::ffi::OsString::from).collect::<Vec<_>>();
+        assert_eq!(tool_of_process("node", &cmd(&["node", "/usr/lib/node_modules/@google/gemini-cli/bundle/gemini.js"])), Some("gemini"));
+        assert_eq!(tool_of_process("claude", &cmd(&["claude"])), Some("claude"));
+        assert_eq!(tool_of_process("node", &cmd(&["node", "server.js"])), None);
+        assert_eq!(tool_of_process("vim", &cmd(&["vim", "gemini"])), None);
+    }
     #[test]
     fn nested_project_wins() {
         let roots = vec!["/data/UNI".to_string(), "/data/UNI/research/geoai".to_string()];

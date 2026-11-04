@@ -1,6 +1,6 @@
 //! One running hub: a second launch (or the listen shortcut) hands its request to the first over a local
 //! socket and exits. Messages are single words: "show", "listen".
-// shortcut: Unix sockets only; on Windows every launch opens its own window. Upgrade with a named pipe.
+// Unix: a socket in the runtime dir. Windows: a TCP port on 127.0.0.1, the same idea without a named-pipe crate.
 use std::path::PathBuf;
 
 fn path() -> PathBuf {
@@ -36,12 +36,28 @@ pub fn serve(on: impl Fn(String) + Send + 'static) -> bool {
     true
 }
 
+// shortcut: a fixed port; if another program holds it, every launch opens its own window again.
 #[cfg(not(unix))]
-pub fn send(_msg: &str) -> bool {
-    false
+const ADDR: &str = "127.0.0.1:47219";
+
+#[cfg(not(unix))]
+pub fn send(msg: &str) -> bool {
+    use std::io::Write;
+    let Ok(addr) = ADDR.parse() else { return false };
+    std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(300)).and_then(|mut s| s.write_all(msg.as_bytes())).is_ok()
 }
 
 #[cfg(not(unix))]
-pub fn serve(_on: impl Fn(String) + Send + 'static) -> bool {
+pub fn serve(on: impl Fn(String) + Send + 'static) -> bool {
+    use std::io::Read;
+    let Ok(l) = std::net::TcpListener::bind(ADDR) else { return false }; // loopback only: nothing outside this PC
+    std::thread::spawn(move || {
+        for c in l.incoming().flatten() {
+            let mut s = String::new();
+            if c.take(64).read_to_string(&mut s).is_ok() {
+                on(s.trim().to_string()); // main only acts on "show" and "listen"
+            }
+        }
+    });
     true
 }

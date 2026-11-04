@@ -285,6 +285,7 @@ fn refresh_home(ui: &AppWindow) {
         ui.set_colls(model(colls));
         ui.set_project_count(st.projects.len() as i32);
         ui.set_agent_label(ss(launch::AGENTS.iter().find(|a| a.0 == st.s.agent).map(|a| a.1).unwrap_or("Claude Code")));
+        ui.set_agent_tint(agent_color(&st.s.agent));
     });
     refresh_agents(ui);
 }
@@ -302,6 +303,7 @@ fn refresh_agents(ui: &AppWindow) {
                 icon: it.icon,
                 has_icon: it.has_icon,
                 tool: ss(launch::AGENTS.iter().find(|t| t.0 == a.tool).map(|t| t.1).unwrap_or(&a.tool)),
+                tint: agent_color(&a.tool),
                 state: ss(&a.state),
                 wid: ss(a.window.clone().unwrap_or_default()),
             })
@@ -443,7 +445,8 @@ fn refresh_settings(ui: &AppWindow) {
     let terms = launch::installed_terminals();
     let term_cur = if s.terminal.is_empty() { terms.first().map(|t| t.0).unwrap_or("").to_string() } else { s.terminal.clone() };
     let lists: Vec<(&'static str, Vec<(String, String)>, String)> = vec![
-        ("agent", own(launch::AGENTS), s.agent.clone()),
+        // installed agents, plus the chosen one even when it is not
+        ("agent", own(&launch::AGENTS.iter().copied().filter(|a| a.0 == s.agent || launch::which(a.0).is_some()).collect::<Vec<_>>()), s.agent.clone()),
         ("terminal", own(&terms), term_cur),
         ("editor", own(&launch::installed(launch::EDITORS)), s.editor.clone()),
         ("browser", own(&launch::installed(launch::BROWSERS)), s.browser.clone()),
@@ -465,6 +468,8 @@ fn refresh_settings(ui: &AppWindow) {
     });
     let mut it = out.into_iter();
     let (m, i) = it.next().unwrap(); ui.set_agent_names(m); ui.set_agent_index(i);
+    ui.set_agent_colors(model(with(|st| st.choices.get("agent").map(|l| l.iter().map(|(k, _)| agent_color(k)).collect()).unwrap_or_default())));
+    ui.set_local_model(ss(&s.local_model));
     let (m, i) = it.next().unwrap(); ui.set_term_names(m); ui.set_term_index(i);
     let (m, i) = it.next().unwrap(); ui.set_editor_names(m); ui.set_editor_index(i);
     let (m, i) = it.next().unwrap(); ui.set_browser_names(m); ui.set_browser_index(i);
@@ -926,7 +931,7 @@ fn main() {
     }
     let settings = Settings::load();
     chat::set_dir(&settings.chat_dir);
-    chat::set_agent(&settings.agent);
+    chat::set_agent(&settings.agent, &settings.local_model);
     if std::env::args().any(|a| a == "--list") {
         // print the projects the app finds, for checking the scan settings
         for p in scan::collect(&settings) {
@@ -965,6 +970,7 @@ fn main() {
             .select();
     }
     let ui = AppWindow::new().expect("window");
+    UI.with(|u| *u.borrow_mut() = Some(ui.as_weak()));
     let brief = if settings.mail { desk::cached_brief() } else { None };
     let roots = Arc::new(Mutex::new(vec![]));
     ST.with(|s| *s.borrow_mut() = Some(State {
@@ -1075,10 +1081,14 @@ fn main() {
         if changed { apply_theme(&ui); refresh_home(&ui); refresh_settings(&ui); }
         if changed && key == "agent" {
             // sessions, activity, running agents and chats all come from the selected agent
-            with(|st| { st.act_started = false; st.agents.clear(); chat::set_agent(&st.s.agent); });
+            with(|st| { st.act_started = false; st.agents.clear(); chat::set_agent(&st.s.agent, &st.s.local_model); });
             clear_chat(&ui);
             rescan(&ui);
         }
+    });
+    cb!(on_set_local_model, |ui, v: SharedString| {
+        with(|st| { st.s.local_model = v.trim().to_string(); save(st); chat::set_agent(&st.s.agent, &st.s.local_model); });
+        refresh_settings(&ui);
     });
     cb!(on_set_vault, |ui, v: SharedString| {
         let ok = v.is_empty() || Path::new(v.as_str()).is_dir();
@@ -1756,11 +1766,32 @@ fn finish_live(ui: &AppWindow) {
 }
 
 /// Bring this window to the front (compositors that allow it: niri, Hyprland, sway).
+fn agent_color(agent: &str) -> slint::Color {
+    let (r, g, b) = launch::agent_color(agent);
+    slint::Color::from_rgb_u8(r, g, b)
+}
+
+thread_local! {
+    static UI: RefCell<Option<slint::Weak<AppWindow>>> = const { RefCell::new(None) };
+}
+
+/// Bring Cove to the front: through the compositor where it allows that (niri, Hyprland, sway), else through the
+/// windowing system (Windows, X11; other Wayland desktops may only mark the window as wanting attention).
 fn focus_self() {
-    match live::windows().get(&std::process::id()) {
-        Some(w) => { if !live::focus(w) { eprintln!("focus: the compositor refused {w}"); } }
-        None => eprintln!("focus: no window of this process found (compositor not supported?)"),
+    if let Some(w) = live::windows().get(&std::process::id()) {
+        if live::focus(w) {
+            return;
+        }
     }
+    use slint::winit_030::WinitWindowAccessor;
+    UI.with(|u| {
+        if let Some(ui) = u.borrow().as_ref().and_then(|w| w.upgrade()) {
+            ui.window().with_winit_window(|w| {
+                w.set_minimized(false);
+                w.focus_window();
+            });
+        }
+    });
 }
 
 /// The listen key, hold or toggle. niri cannot report a key release, but a held key repeats, so each

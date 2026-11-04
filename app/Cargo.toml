@@ -1,6 +1,6 @@
 [package]
 name = "cove"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Desktop launcher that lists your code projects and opens each one with a coding agent (Claude Code, Codex, opencode)"
 license = "MIT"

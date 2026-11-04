@@ -125,6 +125,8 @@ jobs:
           $dir = Join-Path $env:LOCALAPPDATA 'Programs\Cove'
           if (-not (Test-Path "$dir\cove.exe")) { throw 'cove.exe missing' }
           if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'Cove.lnk'))) { throw 'Start menu shortcut missing' }
+          $l = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Programs')) 'Cove - Listen.lnk'))
+          if ($l.Arguments -ne '--listen' -or -not $l.Hotkey) { throw "listen shortcut wrong: '$($l.Arguments)' '$($l.Hotkey)'" }
           if (([Environment]::GetEnvironmentVariable('Path', 'User') -split ';') -notcontains $dir) { throw 'not on PATH' }
           # a second run is an update and must also work
           irm "https://github.com/${{ github.repository }}/releases/download/$env:COVE_VERSION/install.ps1" | iex

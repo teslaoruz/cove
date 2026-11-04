@@ -119,6 +119,32 @@ pub fn opencode_history(id: &str) -> Vec<(String, bool)> {
     read().unwrap_or_default()
 }
 
+/// The typed messages and text replies of one Codex thread, from its rollout file, oldest first.
+pub fn codex_history(id: &str) -> Vec<(String, bool)> {
+    let Some(c) = codex_db().and_then(|p| open(&p)) else { return vec![] };
+    let Ok(path) = c.query_row("SELECT rollout_path FROM threads WHERE id = ?1", [id], |r| r.get::<_, String>(0)) else { return vec![] };
+    let Ok(f) = std::fs::File::open(path) else { return vec![] };
+    use std::io::BufRead;
+    let mut out = vec![];
+    for line in std::io::BufReader::new(f).lines().map_while(Result::ok) {
+        if !line.contains("\"response_item\"") {
+            continue; // cheap filter before parsing
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+        let p = &v["payload"];
+        let user = p["role"] == "user";
+        if p["type"] != "message" || !(user || p["role"] == "assistant") {
+            continue;
+        }
+        let text: String = p["content"].as_array().into_iter().flatten().filter_map(|b| b["text"].as_str()).collect::<Vec<_>>().join("\n");
+        let text = text.trim();
+        if !text.is_empty() && !text.starts_with('<') {
+            out.push((text.to_string(), user)); // '<' starts Codex's own context blocks, not typed text
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

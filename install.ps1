@@ -35,18 +35,27 @@
         }
         Copy-Item "$tmp\x\cove\*" $dir -Recurse -Force
 
-        $lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'Cove.lnk'
-        $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
-        $shortcut.TargetPath = $exe
-        $shortcut.WorkingDirectory = $dir
-        $shortcut.Description = 'Your projects and coding agents in one place'
-        $shortcut.Save()
+        # Start menu entries. Their shortcut keys work anywhere in Windows; a key the user changed is kept on update.
+        $menu = [Environment]::GetFolderPath('Programs')
+        $shell = New-Object -ComObject WScript.Shell
+        foreach ($entry in @(
+            @{ Name = 'Cove.lnk'; Args = ''; Key = 'CTRL+ALT+C'; Text = 'Your projects and coding agents in one place' },
+            @{ Name = 'Cove - Listen.lnk'; Args = '--listen'; Key = 'CTRL+ALT+L'; Text = 'Bring up Cove and start listening' }
+        )) {
+            $shortcut = $shell.CreateShortcut((Join-Path $menu $entry.Name))
+            $shortcut.TargetPath = $exe
+            $shortcut.Arguments = $entry.Args
+            $shortcut.WorkingDirectory = $dir
+            $shortcut.Description = $entry.Text
+            if (-not $shortcut.Hotkey) { $shortcut.Hotkey = $entry.Key }
+            $shortcut.Save()
+        }
 
         $path = [Environment]::GetEnvironmentVariable('Path', 'User')
         if (($path -split ';') -notcontains $dir) {
             [Environment]::SetEnvironmentVariable('Path', ((@($path, $dir) | Where-Object { $_ }) -join ';'), 'User')
         }
-        Write-Host 'Cove is installed. Start it from the Start menu, or run "cove" in a new terminal.'
+        Write-Host 'Cove is installed. Start it from the Start menu, press Ctrl+Alt+C, or run "cove" in a new terminal. Ctrl+Alt+L starts listening.'
     } finally {
         Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }

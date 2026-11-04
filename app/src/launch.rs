@@ -20,7 +20,60 @@ pub const TERMINALS: &[(&str, &str, &str)] = &[
 pub const EDITORS: &[(&str, &str)] = &[("code", "VS Code"), ("codium", "VSCodium"), ("cursor", "Cursor"), ("zed", "Zed"), ("subl", "Sublime Text"), ("nvim", "Neovim"), ("idea", "IntelliJ IDEA")];
 pub const BROWSERS: &[(&str, &str)] = &[("", "System default"), ("google-chrome-stable", "Chrome"), ("firefox", "Firefox"), ("chromium", "Chromium"), ("brave", "Brave"), ("microsoft-edge", "Edge")];
 pub const FILE_MANAGERS: &[(&str, &str)] = &[("", "System default"), ("nautilus", "Files"), ("dolphin", "Dolphin"), ("thunar", "Thunar"), ("nemo", "Nemo"), ("pcmanfm", "PCManFM")];
-pub const AGENTS: &[(&str, &str)] = &[("claude", "Claude Code"), ("codex", "Codex"), ("opencode", "opencode")];
+/// (binary, label) of the coding agents Cove can start. Cove reads the sessions of the first three only.
+pub const AGENTS: &[(&str, &str)] = &[
+    ("claude", "Claude Code"),
+    ("codex", "Codex"),
+    ("opencode", "opencode"),
+    ("gemini", "Gemini CLI"),
+    ("copilot", "GitHub Copilot CLI"),
+    ("cursor-agent", "Cursor CLI"),
+    ("qwen", "Qwen Code"),
+    ("aider", "Aider"),
+    ("goose", "Goose"),
+];
+
+/// Each agent's colour, so it reads the same in the picker, the sidebar and the running-agent list.
+pub fn agent_color(agent: &str) -> (u8, u8, u8) {
+    match agent {
+        "claude" => (0xd9, 0x77, 0x57),
+        "codex" => (0x10, 0xa3, 0x7f),
+        "opencode" => (0xe8, 0xb3, 0x3b),
+        "gemini" => (0x42, 0x85, 0xf4),
+        "copilot" => (0x89, 0x57, 0xe5),
+        "cursor-agent" => (0x2f, 0xc6, 0xd8),
+        "qwen" => (0x61, 0x5c, 0xed),
+        "aider" => (0xe5, 0x48, 0x4d),
+        "goose" => (0xd9, 0x4f, 0xa8),
+        _ => (0x8e, 0x8e, 0x93),
+    }
+}
+
+/// Ollama's address; it speaks both the OpenAI and the Anthropic API there.
+pub const OLLAMA: &str = "http://localhost:11434";
+
+/// opencode's provider entry for one Ollama model, merged into OPENCODE_CONFIG_CONTENT.
+pub fn opencode_ollama(model: &str) -> serde_json::Value {
+    serde_json::json!({ "provider": { "ollama": { "npm": "@ai-sdk/openai-compatible", "name": "Ollama", "options": { "baseURL": format!("{OLLAMA}/v1") }, "models": { model: { "name": model } } } } })
+}
+
+/// Arguments and environment that run `agent` on a local Ollama model; None when the setting is off or the agent
+/// cannot use one. The arguments go right after the program name.
+pub fn local_model(agent: &str, model: &str) -> Option<(Vec<String>, Vec<(&'static str, String)>)> {
+    let m = model.trim();
+    if m.is_empty() {
+        return None;
+    }
+    match agent {
+        // Claude Code talks to Ollama's Anthropic-compatible API
+        "claude" => Some((vec!["--model".into(), m.into()], vec![("ANTHROPIC_BASE_URL", OLLAMA.into()), ("ANTHROPIC_AUTH_TOKEN", "ollama".into()), ("ANTHROPIC_API_KEY", String::new())])),
+        "codex" => Some((vec!["--oss".into(), "-m".into(), m.into()], vec![])),
+        // shortcut: opencode's background service may not read OPENCODE_CONFIG_CONTENT; check with a real session
+        "opencode" => Some((vec!["-m".into(), format!("ollama/{m}")], vec![("OPENCODE_CONFIG_CONTENT", opencode_ollama(m).to_string())])),
+        "aider" => Some((vec!["--model".into(), format!("ollama_chat/{m}")], vec![("OLLAMA_API_BASE", OLLAMA.into())])),
+        _ => None,
+    }
+}
 
 pub fn which(bin: &str) -> Option<std::path::PathBuf> {
     let exts: &[&str] = if cfg!(windows) { &["", ".exe", ".cmd", ".bat"] } else { &[""] };
@@ -65,9 +118,29 @@ pub enum Mode<'a> {
 
 /// Command line that starts `agent` in the given mode.
 pub fn agent_cmd(agent: &str, mode: &Mode) -> String {
+    agent_cmd_with(agent, mode, &[])
+}
+
+/// Like `agent_cmd`, with `extra` arguments right after the program (a local model, for example).
+pub fn agent_cmd_with(agent: &str, mode: &Mode, extra: &[String]) -> String {
     let exe = which(agent).map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| agent.to_string());
-    let exe = sh_quote(&exe);
+    let exe = sh_quote(&exe) + &extra.iter().map(|a| format!(" {}", sh_quote(a))).collect::<String>();
     let args = match (agent, mode) {
+        // Gemini CLI and its fork Qwen Code: -i starts an interactive session with a first prompt
+        ("gemini" | "qwen", Mode::New(Some(p))) => format!(" -i {}", sh_quote(p)),
+        ("gemini" | "qwen", Mode::Continue) => " --resume latest".into(),
+        ("gemini" | "qwen", Mode::ContinueWith(p)) => format!(" --resume latest -i {}", sh_quote(p)),
+        ("gemini" | "qwen", Mode::Resume(id)) => format!(" --resume {}", sh_quote(id)),
+        ("copilot", Mode::New(Some(p))) => format!(" -i {}", sh_quote(p)),
+        ("copilot", Mode::ContinueWith(p)) => format!(" --continue -i {}", sh_quote(p)),
+        ("cursor-agent", Mode::Continue | Mode::ContinueWith(_)) => " resume".into(),
+        ("cursor-agent", Mode::Resume(id)) => format!(" --resume {}", sh_quote(id)),
+        // Aider reads its arguments as files, so a first prompt is not passed; it keeps one chat per folder
+        ("aider", Mode::New(_)) => String::new(),
+        ("aider", _) => " --restore-chat-history".into(),
+        ("goose", Mode::New(None)) => " session".into(),
+        ("goose", Mode::New(Some(p))) => format!(" run --interactive -t {}", sh_quote(p)),
+        ("goose", _) => " session --resume".into(),
         ("codex", Mode::Continue) => " resume --last".to_string(),
         ("codex", Mode::ContinueWith(p)) => format!(" resume --last {}", sh_quote(p)),
         ("opencode", Mode::ContinueWith(p)) => format!(" --continue --prompt {}", sh_quote(p)),
@@ -102,19 +175,24 @@ fn spawn(mut c: Command) -> std::io::Result<()> {
 
 /// Open a terminal in `dir`, running `cmd` (a shell command line) if given, keeping the window open on failure.
 pub fn terminal(s: &Settings, dir: &str, cmd: Option<&str>) -> std::io::Result<()> {
+    terminal_env(s, dir, cmd, &[])
+}
+
+/// `terminal` with extra environment for the program it runs.
+pub fn terminal_env(s: &Settings, dir: &str, cmd: Option<&str>, env: &[(&str, String)]) -> std::io::Result<()> {
     let key = if s.terminal.is_empty() { default_terminal() } else { s.terminal.as_str() };
     #[cfg(windows)]
     {
         let mut c = if key == "wt" { let mut c = Command::new("wt.exe"); c.args(["-d", dir, "cmd"]); c } else { let mut c = Command::new("cmd"); c.args(["/c", "start", "", "cmd"]); c.current_dir(dir); c };
         if let Some(cmd) = cmd { c.args(["/k", cmd]); }
-        return spawn(c);
+        return spawn(with_env(c, env));
     }
     #[cfg(target_os = "macos")]
     if key == "terminal-app" {
         let script = format!("cd {} && {}", sh_quote(dir), cmd.unwrap_or("clear"));
         let mut c = Command::new("osascript");
         c.args(["-e", &format!("tell application \"Terminal\" to do script {}", applescript_quote(&script)), "-e", "tell application \"Terminal\" to activate"]);
-        return spawn(c);
+        return spawn(with_env(c, env));
     }
     let wrapped = cmd.map(|cmd| format!("{cmd}; s=$?; [ $s -eq 0 ] || {{ echo \"exited $s - press Enter\"; read _; }}"));
     let bin = TERMINALS.iter().find(|t| t.0 == key).map(|t| t.2).unwrap_or(key);
@@ -135,7 +213,12 @@ pub fn terminal(s: &Settings, dir: &str, cmd: Option<&str>) -> std::io::Result<(
     if Path::new(dir).is_dir() {
         c.current_dir(dir);
     }
-    spawn(c)
+    spawn(with_env(c, env))
+}
+
+fn with_env(mut c: Command, env: &[(&str, String)]) -> Command {
+    c.envs(env.iter().map(|(k, v)| (*k, v.as_str())));
+    c
 }
 
 #[cfg(target_os = "macos")]
@@ -144,7 +227,8 @@ fn applescript_quote(s: &str) -> String {
 }
 
 pub fn agent(s: &Settings, dir: &str, mode: Mode) -> std::io::Result<()> {
-    terminal(s, dir, Some(&agent_cmd(&s.agent, &mode)))
+    let (extra, env) = local_model(&s.agent, &s.local_model).unwrap_or_default();
+    terminal_env(s, dir, Some(&agent_cmd_with(&s.agent, &mode, &extra)), &env)
 }
 
 /// Open a path or URL with the system handler.
@@ -220,6 +304,9 @@ mod tests {
         assert!(agent_cmd("claude", &Mode::Resume("abc")).ends_with(" --resume 'abc'"));
         assert!(agent_cmd("codex", &Mode::Resume("abc")).ends_with(" resume 'abc'"));
         assert!(agent_cmd("opencode", &Mode::Resume("ses_1")).ends_with(" --session 'ses_1'"));
+        assert!(agent_cmd("gemini", &Mode::New(Some("hi"))).ends_with(" -i 'hi'"));
+        assert!(agent_cmd("aider", &Mode::New(Some("hi"))).ends_with("aider'"));
+        assert!(agent_cmd_with("codex", &Mode::Continue, &["--oss".into()]).ends_with(" '--oss' resume --last"));
         assert!(agent_cmd("codex", &Mode::Continue).ends_with(" resume --last"));
         assert!(agent_cmd("opencode", &Mode::New(Some("hi"))).ends_with(" --prompt 'hi'"));
         assert!(!agent_cmd("claude", &Mode::New(None)).contains("--"));

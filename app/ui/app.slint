@@ -20,6 +20,8 @@ component NavItem inherits Rectangle {
     in property <string> text;
     in property <string> icon;
     in property <int> hue: -1;          // collection dot
+    in property <color> tint;           // icon colour, when tinted
+    in property <bool> tinted;
     in property <ProjectItem> project;  // mini tile, when has-project
     in property <bool> has-project;
     in property <int> count: -1;
@@ -56,7 +58,7 @@ component NavItem inherits Rectangle {
         spacing: 10px;
         Rectangle {
             width: 18px;
-            if hue < 0 && !has-project: Icon { d: root.icon; size: 16px; weight: 1.6px; color: root.active ? Theme.accent-text : Theme.soft; }
+            if hue < 0 && !has-project: Icon { d: root.icon; size: 16px; weight: 1.6px; color: root.tinted ? root.tint : root.active ? Theme.accent-text : Theme.soft; }
             if hue >= 0: Rectangle { width: 9px; height: 9px; border-radius: 4.5px; background: Theme.hue-bottom(root.hue); }
             if has-project: Squircle { hue: root.project.hue; initials: root.project.initials; icon: root.project.icon; has-icon: root.project.has-icon; size: 18px; }
         }
@@ -267,6 +269,10 @@ export component AppWindow inherits Window {
     in property <bool> proj-loading;
     // settings page
     in property <[string]> agent-names;
+    in property <[color]> agent-colors;  // one per name: each agent has its own colour
+    in property <color> agent-tint;
+    in property <string> local-model;
+    callback set-local-model(string);
     in property <int> agent-index;
     in property <[string]> term-names;
     in property <int> term-index;
@@ -591,6 +597,8 @@ export component AppWindow inherits Window {
                     agent-row := NavItem {
                         text: agent-label;
                         icon: Icons.terminal;
+                        tint: agent-tint;
+                        tinted: true;
                         trailing: Icons.chevron;
                         compact: side-compact;
                         clicked => { agent-menu.show(); }
@@ -621,6 +629,8 @@ export component AppWindow inherits Window {
                                 HorizontalLayout {
                                     padding-left: 10px;
                                     padding-right: 10px;
+                                    spacing: 9px;
+                                    Rectangle { y: (parent.height - 9px) / 2; width: 9px; height: 9px; border-radius: 4.5px; background: agent-colors[k]; }
                                     Text { text: name; color: Theme.ink; vertical-alignment: center; horizontal-stretch: 1; }
                                     if k == agent-index: Icon { y: (parent.height - self.height) / 2; d: Icons.check; size: 15px; color: Theme.accent-text; }
                                 }
@@ -800,7 +810,7 @@ export component AppWindow inherits Window {
                                                             alignment: center;
                                                             horizontal-stretch: 1;
                                                             Text { text: a.name; color: Theme.ink; font-weight: 600; overflow: elide; }
-                                                            Text { text: a.tool; color: Theme.faint; font-size: Theme.t-small; overflow: elide; }
+                                                            Text { text: a.tool; color: a.tint; font-size: Theme.t-small; font-weight: 600; overflow: elide; }
                                                         }
                                                         if lta.has-hover: Icon { y: (parent.height - self.height) / 2; d: Icons.jump; size: 16px; color: Theme.soft; }
                                                         Text {
@@ -1045,9 +1055,11 @@ cont(n) => { root.continue-project(n); }
                                     Row { Field { text: "Code editor"; vertical-alignment: center; } ComboBox { max-width: 320px; model: editor-names; current-index: editor-index; selected => { root.set-choice("editor", self.current-index); } } }
                                     Row { Field { text: "Browser"; vertical-alignment: center; } ComboBox { max-width: 320px; model: browser-names; current-index: browser-index; selected => { root.set-choice("browser", self.current-index); } } }
                                     Row { Field { text: "File manager"; vertical-alignment: center; } ComboBox { max-width: 320px; model: files-names; current-index: files-index; selected => { root.set-choice("files", self.current-index); } } }
+                                    Row { Field { text: "Local model"; vertical-alignment: center; } LineEdit { text: local-model; placeholder-text: "Off. Ollama model, e.g. qwen3-coder (Enter)"; accepted(t) => { root.set-local-model(t); } } }
                                     Row { Field { text: "Updates"; vertical-alignment: center; } Switch { text: "Install new versions automatically"; checked: auto-update; toggled => { root.set-flag("auto-update", self.checked); } } }
                                     Row { Field { text: "Inbox"; vertical-alignment: center; } Switch { text: "Show unread mail and events (asks Claude Code)"; checked: mail-on; toggled => { root.set-flag("mail", self.checked); } } }
                                 }
+                                Text { text: "Local model runs Claude Code, Codex, opencode or Aider on Ollama (localhost:11434) instead of the cloud. Leave it empty to use each agent's own models."; color: Theme.faint; font-size: Theme.t-small; wrap: word-wrap; }
                                 Text { text: update-note; color: Theme.faint; font-size: Theme.t-small; wrap: word-wrap; }
                             }
                         }

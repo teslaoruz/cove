@@ -8,18 +8,21 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 static DIR: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
-static AGENT: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
+static AGENT: std::sync::RwLock<(String, String)> = std::sync::RwLock::new((String::new(), String::new()));
 
-/// The agent chats go to (claude | opencode | codex). Set on start and when the user switches agents.
-pub fn set_agent(agent: &str) {
-    *AGENT.write().unwrap() = agent.to_string();
+/// The agent chats go to, and the local model it runs on ("" = its own). Set on start and on every change.
+pub fn set_agent(agent: &str, local_model: &str) {
+    *AGENT.write().unwrap() = (agent.to_string(), local_model.to_string());
 }
 
 fn agent() -> String {
-    match AGENT.read().unwrap().as_str() {
-        a @ ("opencode" | "codex") => a.to_string(),
-        _ => "claude".to_string(),
-    }
+    let a = AGENT.read().unwrap().0.clone();
+    if a.is_empty() { "claude".into() } else { a }
+}
+
+fn local() -> Option<(Vec<String>, Vec<(&'static str, String)>)> {
+    let (a, m) = AGENT.read().unwrap().clone();
+    crate::launch::local_model(if a.is_empty() { "claude" } else { &a }, &m)
 }
 
 const CLAUDE_ONLY: &str = "This works for Claude Code chats only, for now.";
@@ -121,7 +124,7 @@ pub fn history(id: &str) -> Vec<(String, bool)> {
     use std::io::BufRead;
     match agent().as_str() {
         "opencode" => return crate::agents::opencode_history(id),
-        "codex" => return vec![], // shortcut: Codex keeps messages in rollout files this does not read yet
+        "codex" => return crate::agents::codex_history(id),
         _ => {}
     }
     let Ok(fh) = fs::File::open(sessions_dir().join(format!("{id}.jsonl"))) else { return vec![] };
@@ -177,7 +180,8 @@ pub fn send(sid: Option<&str>, text: &str) -> Result<(String, String), String> {
     match agent().as_str() {
         "opencode" => send_opencode(sid, text),
         "codex" => send_codex(sid, text),
-        _ => send_claude(sid, text),
+        "claude" => send_claude(sid, text),
+        _ => Err("Chat works with Claude Code, Codex and opencode. Pick one at the bottom of the sidebar.".into()),
     }
 }
 
@@ -185,6 +189,9 @@ fn send_claude(sid: Option<&str>, text: &str) -> Result<(String, String), String
     let claude = crate::launch::which("claude").ok_or("The chat needs Claude Code (claude) on PATH.")?;
     let mut c = Command::new(claude);
     crate::launch::subscription_only(&mut c);
+    if let Some((args, env)) = local() {
+        c.args(args).envs(env); // a local model: Ollama stands in for Anthropic's API
+    }
     // web tools only, and nothing that would ask
     c.args(["-p", "--output-format", "json", "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch", "--permission-mode", "dontAsk"]);
     if let Some(s) = sid {
@@ -204,7 +211,14 @@ fn send_opencode(sid: Option<&str>, text: &str) -> Result<(String, String), Stri
     let bin = crate::launch::which("opencode").ok_or("The chat needs opencode on PATH.")?;
     let mut c = Command::new(bin);
     // --standalone: a private server, so these permission rules apply instead of the background service's own
-    c.args(["run", "--standalone", "--format", "json"]).env("OPENCODE_CONFIG_CONTENT", OPENCODE_CHAT_CONFIG);
+    let mut config: serde_json::Value = serde_json::from_str(OPENCODE_CHAT_CONFIG).unwrap_or_default();
+    c.args(["run", "--standalone", "--format", "json"]);
+    if let Some((args, _)) = local() {
+        let model = args.get(1).map(|m| m.trim_start_matches("ollama/").to_string()).unwrap_or_default();
+        config["provider"] = crate::launch::opencode_ollama(&model)["provider"].clone();
+        c.args(args);
+    }
+    c.env("OPENCODE_CONFIG_CONTENT", config.to_string());
     if let Some(s) = sid {
         c.args(["--session", s]);
     }
@@ -233,12 +247,15 @@ fn parse_opencode(out: &[u8]) -> Result<(String, String), String> {
     }
 }
 
-// shortcut: written from Codex's documented --json events, untested (no Codex login here); try it before relying on it.
 fn send_codex(sid: Option<&str>, text: &str) -> Result<(String, String), String> {
     let bin = crate::launch::which("codex").ok_or("The chat needs Codex (codex) on PATH.")?;
     let mut c = Command::new(bin);
     // read-only sandbox; ~/Chats is not a git repository
-    c.args(["exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check"]);
+    c.arg("exec");
+    if let Some((args, _)) = local() {
+        c.args(args);
+    }
+    c.args(["--json", "--sandbox", "read-only", "--skip-git-repo-check"]);
     if let Some(s) = sid {
         c.args(["resume", s]);
     }

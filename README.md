@@ -163,12 +163,47 @@ Cove needs only one thing besides itself: a coding agent. Everything else is an 
 | **Handy** | Dictation: speak, and the words appear in Cove's box | ✓ | ✓ | [Voice input](#voice-input-handy) |
 | **A voice** | Cove reads its chat replies aloud | ✓ (Kokoro, Piper or espeak-ng) | ✓ built in | [Spoken replies](#spoken-replies) |
 | **Talk mode models** | A hands-free conversation: words show as you speak, and every pause sends | ✓ | — | [Talk mode](#talk-mode-live-speech-to-text) |
-| **Keyboard shortcut** | One key that brings Cove up and starts listening | ✓ | via Handy | [Shortcuts](#keyboard-shortcuts) |
+| **Keyboard shortcut** | One key that brings Cove up and starts listening | ✓ | ✓ set up by the installer | [Shortcuts](#keyboard-shortcuts) |
+| **More agents** | Gemini CLI, Copilot CLI, Cursor CLI, Qwen Code, Aider, Goose | ✓ | ✓ | [Agents](#coding-agents) |
+| **Ollama** | Run your agent on a local model, offline and free | ✓ | ✓ | [Local models](#local-models-ollama) |
 | **Gmail and Calendar connectors** | Unread mail and upcoming events on the home screen | ✓ | ✓ | [Inbox](#inbox) |
 | **Obsidian vault** | Each project's description and open to-dos | ✓ | ✓ | [Notes](#project-notes-obsidian) |
 | **A tiling compositor** | Jump straight to the terminal of a running agent | niri, Hyprland, sway | — | [Window jump](#jump-to-an-agents-window) |
 
 ## Add-on guides
+
+### Coding agents
+
+Cove works with these agents. Install any of them, and they appear in the picker at the bottom of the sidebar, each with its own colour.
+
+| Agent | Install | Cove reads its sessions | Chat in Cove |
+| --- | --- | --- | --- |
+| <img src="assets/agents/d97757.svg" alt=""> **Claude Code** | [docs.claude.com](https://docs.claude.com/en/docs/claude-code) | ✓ | ✓ |
+| <img src="assets/agents/10a37f.svg" alt=""> **Codex** | `npm install -g @openai/codex`, then `codex login` | ✓ | ✓ |
+| <img src="assets/agents/e8b33b.svg" alt=""> **opencode** | [opencode.ai](https://opencode.ai) | ✓ | ✓ |
+| <img src="assets/agents/4285f4.svg" alt=""> **Gemini CLI** | `npm install -g @google/gemini-cli` ([guide](https://github.com/google-gemini/gemini-cli)) | — | — |
+| <img src="assets/agents/8957e5.svg" alt=""> **GitHub Copilot CLI** | `npm install -g @github/copilot` ([guide](https://github.com/github/copilot-cli)) | — | — |
+| <img src="assets/agents/2fc6d8.svg" alt=""> **Cursor CLI** | [cursor.com/cli](https://cursor.com/cli) | — | — |
+| <img src="assets/agents/615ced.svg" alt=""> **Qwen Code** | `npm install -g @qwen-code/qwen-code` ([guide](https://github.com/QwenLM/qwen-code)) | — | — |
+| <img src="assets/agents/e5484d.svg" alt=""> **Aider** | [aider.chat](https://aider.chat/docs/install.html) | — | — |
+| <img src="assets/agents/d94fa8.svg" alt=""> **Goose** | [block.github.io/goose](https://block.github.io/goose/docs/getting-started/installation) | — | — |
+
+All agents open, continue and resume from Cove and show up as running agents. Session counts, Activity and Chat need an agent whose history Cove can read: Claude Code, Codex or opencode.
+
+### Local models (Ollama)
+
+Run your agent on a model on your own computer instead of the cloud. It's free, private, and works offline. You need a fairly strong computer, ideally with 16 GB of memory or a good graphics card.
+
+1. Install [Ollama](https://ollama.com/download):
+   - **Linux:** `curl -fsSL https://ollama.com/install.sh | sh`
+   - **Windows:** `winget install Ollama.Ollama`
+2. Download a coding model, for example `ollama pull qwen3-coder`.
+3. In Cove, type the model name into **Settings → Apps → Local model** and press Enter.
+
+This works with **Claude Code**, **Codex**, **opencode** and **Aider**:
+- Each new session, and Cove's Chat, then runs on that model.
+- Clear the field to go back to the agent's own models.
+- Ollama must be running. It starts by itself after installing.
 
 ### Git and GitHub
 
@@ -273,7 +308,21 @@ Use the full path, because some desktops don't search `~/.local/bin`. Replace `y
 
 To bind a key that only brings Cove to the front, use `cove` without `--listen`.
 
-**Windows.** A global Cove shortcut isn't supported yet. Use **Handy's own shortcut** (set it in Handy's settings). With Cove in front, Handy types straight into Cove's box.
+**Windows.** The installer adds two Start menu shortcuts with keys that work anywhere in Windows:
+
+| Key | Action |
+| --- | --- |
+| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd> | Open Cove, or bring it to the front |
+| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>L</kbd> | Bring up Cove and start listening; press again to stop |
+
+To change a key:
+1. Open the Start menu and find **Cove** or **Cove - Listen**.
+2. Right-click it, then choose **More → Open file location**.
+3. Right-click the shortcut, choose **Properties**, click in **Shortcut key**, and press the new keys.
+
+Updates keep the key you chose.
+
+To use a single key such as the **Copilot key**, install [PowerToys](https://learn.microsoft.com/windows/powertoys/install). In **Keyboard Manager → Remap a shortcut**, map that key to <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>L</kbd>.
 
 ### Inbox
 
@@ -302,7 +351,7 @@ On the **niri**, **Hyprland** and **sway** compositors, clicking a running agent
 
 - **Every project in one place.** Each card shows the session count, when you last worked on the project, and its git state. Pin favourites and hide what you don't need.
 - **One-click sessions.** Open a new session, continue the last one, or resume any past session from its first message.
-- **Your agent, your data.** Switch between Claude Code, Codex and opencode at the bottom of the sidebar. Session counts, recent sessions, Activity, running agents and Chat all follow the agent you pick.
+- **Your agent, your data.** Switch between Claude Code, Codex, opencode, Gemini CLI, Copilot CLI, Cursor CLI, Qwen Code, Aider and Goose at the bottom of the sidebar. Each has its own colour, and local models through Ollama work too. Session counts, recent sessions, Activity, running agents and Chat all follow the agent you pick.
 - **Live agents.** See which agents are running right now, in which project, and whether they are working or waiting for you.
 - **Ask in plain words.** Type requests such as *"continue nebula-api"*, *"run quill"* or *"new project called atlas"*. Cove opens the right place, with your request already typed.
 - **Chat.** Talk to Claude Code without picking a project first. When an idea grows, turn the chat into a project with one click.
@@ -342,7 +391,7 @@ Copies you build from source never update themselves.
 **Windows** (PowerShell):
 
 ```powershell
-Remove-Item -Recurse "$env:LOCALAPPDATA\Programs\Cove", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Cove.lnk"
+Remove-Item -Recurse "$env:LOCALAPPDATA\Programs\Cove", "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Cove*.lnk"
 ```
 
 **Linux**:
@@ -395,10 +444,9 @@ Not yet. The code has macOS paths in place, but there is no tested build. Contri
 ## Known limits
 
 - **Jump to an agent's window** works on niri, Hyprland and sway. Elsewhere, Cove shows running agents but can't bring their window to the front.
-- **Talk mode and a global shortcut are Linux-only** for now. On Windows, use Handy for dictation; spoken replies use the Windows voice.
+- **Talk mode is Linux-only** for now. On Windows, use Handy for dictation. Spoken replies use the Windows voice.
 - **Glass** (see-through window) uses Mica on Windows. On Linux, it needs a compositor that blurs, such as KDE Plasma, Hyprland or niri.
-- **Codex support is new.** Cove reads Codex's sessions and can chat through `codex exec`, but this has not been tested with a signed-in Codex yet.
-- **Chat extras are for Claude Code.** Renaming a chat and turning a chat into a project work with Claude Code. With opencode you can delete chats; with Codex, neither yet.
+- **Chat extras are for Claude Code.** Renaming a chat and turning a chat into a project work with Claude Code. With opencode you can also delete chats. Chat needs Claude Code, Codex or opencode.
 - **Windows is newer than Linux.** Each release is built and installed on Windows in CI. If something doesn't feel right, please [open an issue](https://github.com/teslaoruz/cove/issues).
 
 ## Build from source

@@ -38,6 +38,7 @@ pub struct Settings {
     pub voice: String,        // Kokoro voice, e.g. af_heart
     pub voice_speed: f32,     // 1 = normal
     pub auto_update: bool,    // install new releases by itself (installed copies only)
+    pub local_model: String,  // Ollama model the agent runs on, "" = the agent's own models
     pub mail: bool,           // Inbox: ask claude for unread mail and events; off until the user turns it on
 }
 
@@ -66,6 +67,7 @@ impl Default for Settings {
             voice_speed: 1.0,
             auto_update: true,
             mail: false,
+            local_model: String::new(),
         }
     }
 }
