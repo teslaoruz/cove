@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Project Hub
+Comment=Your projects and coding agents in one place
+Exec=project-hub
+Icon=project-hub
+Categories=Development;
+StartupWMClass=local.claude.launcher

@@ -1,0 +1,10 @@
+__pycache__/
+app/target/
+# local only: old Python app, design tooling, personal notes
+hub.py
+hub.old.py
+.impeccable/
+.claude/
+plans/
+PRODUCT.md
+DESIGN.md

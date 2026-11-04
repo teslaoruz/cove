@@ -1,0 +1,28 @@
+[package]
+name = "project-hub"
+version = "0.1.0"
+edition = "2021"
+description = "Desktop launcher that lists your code projects and opens each one with a coding agent (Claude Code, Codex, opencode)"
+license = "MIT"
+repository = "https://github.com/teslaoruz/project-hub"
+
+[dependencies]
+slint = { version = "1.18", default-features = false, features = ["std", "compat-1-2", "backend-winit", "renderer-femtovg", "accessibility", "image-default-formats", "unstable-winit-030"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6"
+sysinfo = { version = "0.40", default-features = false, features = ["system", "disk"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+cpal = "0.18.2"
+
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+window-vibrancy = "0.8"
+
+[build-dependencies]
+slint-build = "1.18"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true

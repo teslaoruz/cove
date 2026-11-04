@@ -1,0 +1,84 @@
+name: build
+
+# Every push to main checks that Linux and Windows build. A tag like v0.2.0 also publishes a release.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04 keeps the glibc requirement low, so the binary runs on older distros too
+          - os: ubuntu-22.04
+            asset: project-hub-linux-x86_64.tar.gz
+          - os: windows-latest
+            asset: project-hub-windows-x86_64.zip
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev libfontconfig1-dev libxkbcommon-dev libwayland-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app
+
+      # the tests use Unix paths
+      - name: Test
+        if: runner.os == 'Linux'
+        run: cargo test --release
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p pkg/project-hub
+          cp target/release/project-hub dist/install.sh dist/project-hub.desktop ../LICENSE pkg/project-hub/
+          cp ../assets/claude-launcher.svg pkg/project-hub/project-hub.svg
+          tar -C pkg -czf ${{ matrix.asset }} project-hub
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force pkg/project-hub | Out-Null
+          Copy-Item target/release/project-hub.exe, ../LICENSE pkg/project-hub/
+          Compress-Archive -Path pkg/project-hub -DestinationPath ${{ matrix.asset }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: app/${{ matrix.asset }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            project-hub-linux-x86_64.tar.gz
+            project-hub-windows-x86_64.zip
+          generate_release_notes: true

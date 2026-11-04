@@ -1,0 +1,386 @@
+// The home "desk": the orb, widget cards and chat bubbles.
+import { Theme, Icons } from "theme.slint";
+import { Icon, Panel, Btn } from "parts.slint";
+
+export struct DeskRow { title: string, sub: string, tag: string, warn: bool, idx: int, url: string }
+export struct Hour { time: string, kind: string, temp: string }
+export struct WeatherView { has: bool, temp: string, text: string, place: string, hilo: string, sun: string, kind: string, day: bool, windy: bool, hours: [Hour] }
+export struct Stat { label: string, value: string, frac: float, warn: bool }
+
+// A globe of dots on latitude rings: it spins, nods, and a soft ripple runs pole to pole while two
+// satellites circle it. Rust draws a new frame only while it is on screen and the window has focus,
+// so a docked or hidden orb costs nothing. `t` morphs it into a small static glass button.
+export component Orb inherits Rectangle {
+    in property <image> frame;
+    in property <float> t;          // 0 = full sphere, 1 = docked button
+    in property <bool> listening;
+    callback clicked;
+    out property <bool> hover: ta.has-hover;
+    out property <bool> down: ta.pressed;
+    out property <float> mx: ta.mouse-x / self.width;
+    out property <float> my: ta.mouse-y / self.height;
+    accessible-role: button;
+    accessible-label: "Talk to the hub";
+    accessible-action-default => { root.clicked(); }
+
+    // soft glow behind the sphere (static)
+    if t < 1: Rectangle {
+        width: parent.width * 1.45;
+        height: self.width;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: self.width / 2;
+        background: @radial-gradient(circle, (Theme.dark ? #ffffff : #8090b0).with-alpha(Theme.dark ? 0.07 : 0.10) 0%, #ffffff.with-alpha(0) 60%);
+        opacity: 1 - t;
+    }
+    // the globe itself is one image, drawn in Rust each frame (src/orb.rs)
+    if t < 1: Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.frame;
+        image-rendering: smooth;
+        opacity: 1 - t;
+    }
+    // docked: a small glass sphere with a mic
+    if t > 0.5: Rectangle {
+        opacity: (t - 0.5) * 2;   // fades in over the second half of the dock, so a small scroll shows no ghost
+        border-radius: self.width / 2;
+        background: root.listening ? @radial-gradient(circle, #ff6b62 0%, #ff453a 60%, #d9302a 100%) : @radial-gradient(circle, #ffffff 0%, #eef1f6 55%, #c9d0dc 100%);
+        drop-shadow-blur: t >= 1 ? 14px : 0;
+        drop-shadow-offset-y: 4px;
+        drop-shadow-color: Theme.shadow;
+        border-width: 1px;
+        border-color: rgba(255, 255, 255, 0.25);
+        Rectangle { x: parent.width * 0.22; y: parent.height * 0.12; width: parent.width * 0.4; height: parent.height * 0.22; border-radius: self.height / 2; background: rgba(255, 255, 255, 0.28); }
+        Icon { d: Icons.mic; size: Math.max(14px, parent.width * 0.42); weight: 1.8px; color: root.listening ? #ffffff : #1d1d1f; }
+    }
+    // on the desk the orb is a toy (drag it, click it); docked it is the mic
+    ta := TouchArea { mouse-cursor: root.t > 0.5 ? pointer : self.pressed ? grabbing : grab; clicked => { if root.t > 0.5 { root.clicked(); } } }
+}
+
+// A desk widget: a glass card with a tinted icon chip, a title, an optional count or action, and rows.
+// `lead` sets the row marker: "dot" (a tinted bullet) or "check" (an empty tick box).
+export component Widget inherits Panel {
+    in property <string> title;
+    in property <string> icon;
+    in property <color> tint: Theme.accent;
+    in property <string> lead: "dot";
+    in property <string> action;     // link text at the right, e.g. "Refresh"
+    in property <string> note;       // shown when there are no rows
+    in property <[DeskRow]> rows;
+    in property <int> max-rows: 4;
+    in property <bool> count: true;  // show how many rows there are
+    callback action-clicked;
+    callback row-clicked(DeskRow);
+    VerticalLayout {
+        padding: 14px;
+        padding-top: 13px;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 9px;
+            height: 24px;
+            Rectangle {
+                width: 24px;
+                border-radius: 7px;
+                background: root.tint.with-alpha(Theme.dark ? 0.20 : 0.14);
+                Icon { d: root.icon; size: 14px; weight: 1.8px; color: root.tint.brighter(Theme.dark ? 25% : -10%); }
+            }
+            Text { text: root.title; color: Theme.ink; font-size: Theme.t-body; font-weight: 650; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+            if root.count && root.rows.length > 0 && root.action == "": Rectangle {
+                y: (parent.height - 18px) / 2;
+                height: 18px;
+                width: cnt.preferred-width + 12px;
+                border-radius: 9px;
+                background: Theme.cell-empty;
+                cnt := Text { text: root.rows.length; color: Theme.soft; font-size: 11px; font-weight: 650; }
+            }
+            if root.action != "": Text {
+                text: root.action;
+                color: ata.has-hover ? Theme.ink : Theme.accent-text;
+                font-size: Theme.t-small;
+                font-weight: 600;
+                vertical-alignment: center;
+                ata := TouchArea { mouse-cursor: pointer; clicked => { root.action-clicked(); } }
+            }
+        }
+        if rows.length == 0 && note != "": Text { text: root.note; color: Theme.faint; font-size: Theme.t-small; wrap: word-wrap; }
+        @children
+        VerticalLayout {
+            spacing: 2px;
+            for r[i] in rows: Rectangle {
+                visible: i < root.max-rows;
+                height: i < root.max-rows ? (r.sub == "" ? 30px : 42px) : 0;
+                border-radius: 8px;
+                background: rta.has-hover && (r.idx >= 0 || r.url != "") ? Theme.panel-hi : transparent;
+                rta := TouchArea { mouse-cursor: r.idx >= 0 || r.url != "" ? pointer : default; clicked => { root.row-clicked(r); } }
+                HorizontalLayout {
+                    padding-left: 4px;
+                    padding-right: 6px;
+                    spacing: 10px;
+                    Rectangle {
+                        width: 14px;
+                        if root.lead == "dot": Rectangle { width: 6px; height: 6px; border-radius: 3px; background: r.warn ? Theme.warm : root.tint; }
+                        if root.lead == "check": Rectangle { width: 14px; height: 14px; border-radius: 4px; border-width: 1.5px; border-color: r.warn ? Theme.warm : Theme.faint; }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        spacing: 1px;
+                        Text { text: r.title; color: Theme.ink; font-size: Theme.t-body; overflow: elide; }
+                        if r.sub != "": Text { text: r.sub; color: Theme.faint; font-size: Theme.t-small; overflow: elide; }
+                    }
+                    if r.tag != "": Rectangle {
+                        y: (parent.height - 20px) / 2;
+                        height: 20px;
+                        width: tg.preferred-width + (r.warn ? 14px : 0px);
+                        border-radius: 10px;
+                        background: r.warn ? Theme.warm.with-alpha(0.16) : transparent;
+                        tg := Text { text: r.tag; color: r.warn ? Theme.warm : Theme.faint; font-size: Theme.t-small; font-weight: r.warn ? 650 : 400; }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// One part of a message: p (markdown prose) | h (heading) | quote | code | table (monospace, selectable) | rule.
+export struct Block { kind: string, text: string, rich: styled-text }
+
+// A chat message. Prose is markdown drawn by StyledText; code and tables are selectable text; the buttons
+// (on hover) read the message aloud and copy it as written.
+export component Bubble inherits HorizontalLayout {
+    in property <string> text;
+    in property <bool> user;
+    in property <[Block]> blocks;
+    callback copy(string);
+    callback link(string);
+    callback speak(string);
+    property <brush> ink: user ? Theme.on-accent : Theme.ink;
+    alignment: user ? end : start;
+    Rectangle {
+        max-width: 640px;
+        border-radius: 14px;
+        background: user ? Theme.accent : Theme.panel-hi;
+        border-width: user ? 0 : 1px;
+        border-color: Theme.hair;
+        accessible-role: AccessibleRole.text; // StyledText is not read out by itself
+        accessible-label: root.text;
+        hover := TouchArea { }
+        VerticalLayout {
+            padding: 9px;
+            padding-left: 13px;
+            padding-right: 13px;
+            spacing: 7px;
+            for b in root.blocks: VerticalLayout {
+                if b.kind == "p": StyledText { text: b.rich; default-color: root.ink; default-font-size: Theme.t-body; link-color: root.user ? Theme.on-accent : Theme.accent-text; link-clicked(u) => { root.link(u); } }
+                if b.kind == "h": StyledText { text: b.rich; default-color: root.ink; default-font-size: Theme.t-lead; link-color: Theme.accent-text; }
+                if b.kind == "quote": HorizontalLayout {
+                    spacing: 9px;
+                    Rectangle { width: 3px; border-radius: 1.5px; background: Theme.hair; }
+                    StyledText { text: b.rich; default-color: Theme.soft; default-font-size: Theme.t-body; link-color: Theme.accent-text; link-clicked(u) => { root.link(u); } }
+                }
+                if b.kind == "rule": Rectangle { height: 1px; background: Theme.hair; }
+                if b.kind == "code" || b.kind == "table": Rectangle {
+                    border-radius: 8px;
+                    background: Theme.cell-empty;
+                    clip: true;
+                    HorizontalLayout {
+                        padding: 8px;
+                        padding-left: 10px;
+                        TextInput {
+                            text: b.text;
+                            read-only: true;
+                            single-line: false;
+                            wrap: b.kind == "code" ? word-wrap : no-wrap;
+                            font-family: Theme.mono;
+                            font-size: Theme.t-small;
+                            color: Theme.ink;
+                            selection-background-color: Theme.accent.with-alpha(0.35);
+                        }
+                    }
+                }
+            }
+        }
+        // always there (keyboard and screen readers reach it), shown on hover or focus
+        if !root.user: copy-btn := Btn {
+            opacity: hover.has-hover || self.hovered ? 1 : 0;
+            x: parent.width - self.width - 4px;
+            y: 4px;
+            width: 26px;
+            height: 26px;
+            icon: Icons.copy;
+            quiet: true;
+            tip: "Copy";
+            clicked => { root.copy(root.text); }
+        }
+        if !root.user: Btn {
+            opacity: hover.has-hover || self.hovered ? 1 : 0;
+            x: parent.width - 2 * self.width - 6px;
+            y: 4px;
+            width: 26px;
+            height: 26px;
+            icon: Icons.speaker;
+            quiet: true;
+            tip: "Read aloud";
+            clicked => { root.speak(root.text); }
+        }
+    }
+}
+
+
+// A puffy cloud from three circles on a rounded base; `w` wide, 0.62·w tall.
+component Cloud inherits Rectangle {
+    in property <length> w: 60px;
+    in property <color> tone: #ffffff;
+    width: w;
+    height: w * 0.62;
+    Rectangle { x: 0; y: root.w * 0.30; width: root.w; height: root.w * 0.32; border-radius: root.w * 0.16; background: root.tone; }
+    Rectangle { x: root.w * 0.10; y: root.w * 0.14; width: root.w * 0.42; height: self.width; border-radius: self.width / 2; background: root.tone; }
+    Rectangle { x: root.w * 0.34; y: 0; width: root.w * 0.52; height: self.width; border-radius: self.width / 2; background: root.tone; }
+}
+
+// Weather drawn, not iconified: sun, moon, clouds, rain, snow, thunder, fog and wind, from plain shapes.
+export component WeatherArt inherits Rectangle {
+    in property <string> kind;
+    in property <bool> windy;
+    width: 84px;
+    height: 84px;
+    property <bool> sunny: kind == "sun" || kind == "partly";
+    property <bool> night: kind == "moon" || kind == "partly-night";
+    property <bool> clouded: kind == "cloud" || kind == "rain" || kind == "snow" || kind == "storm" || kind == "partly" || kind == "partly-night";
+    property <length> body: kind == "partly" || kind == "partly-night" ? 40px : 56px;   // sun or moon size
+    // sun: a warm disc with a halo and rays
+    if sunny: Rectangle {
+        x: kind == "partly" ? 4px : (parent.width - root.body) / 2;
+        y: kind == "partly" ? 4px : (parent.height - root.body) / 2;
+        width: root.body;
+        height: root.body;
+        Rectangle { x: -root.body * 0.35; y: -root.body * 0.35; width: root.body * 1.7; height: self.width; border-radius: self.width / 2; background: @radial-gradient(circle, #ffe680.with-alpha(0.55) 0%, #ffe680.with-alpha(0) 70%); }
+        Path {
+            width: root.body; height: root.body;
+            viewbox-width: 24; viewbox-height: 24;
+            commands: "M 12 0.5 V 3.5 M 12 20.5 V 23.5 M 0.5 12 H 3.5 M 20.5 12 H 23.5 M 3.9 3.9 L 6 6 M 18 18 L 20.1 20.1 M 3.9 20.1 L 6 18 M 18 6 L 20.1 3.9";
+            stroke: #ffd54a;
+            stroke-width: 2.2px;
+        }
+        Rectangle { x: root.body * 0.22; y: self.x; width: root.body * 0.56; height: self.width; border-radius: self.width / 2; background: @radial-gradient(circle, #fff7cc 0%, #ffd23f 60%, #ffaa1a 100%); }
+    }
+    // moon: a crescent with a few stars
+    if night: Rectangle {
+        x: kind == "partly-night" ? 6px : (parent.width - root.body) / 2;
+        y: kind == "partly-night" ? 4px : (parent.height - root.body) / 2;
+        width: root.body;
+        height: root.body;
+        Path {
+            width: parent.width; height: parent.height;
+            viewbox-width: 24; viewbox-height: 24;
+            commands: "M 15.5 2.5 A 10 10 0 1 0 22 17 A 8 8 0 0 1 15.5 2.5 Z";
+            fill: #f5efd2;
+        }
+        if kind == "moon": Rectangle { x: parent.width * 0.86; y: parent.height * 0.10; width: 3px; height: 3px; border-radius: 1.5px; background: #ffffff; }
+        if kind == "moon": Rectangle { x: parent.width * 0.72; y: parent.height * 0.36; width: 2px; height: 2px; border-radius: 1px; background: #ffffff.with-alpha(0.8); }
+        if kind == "moon": Rectangle { x: parent.width * 0.98; y: parent.height * 0.50; width: 2px; height: 2px; border-radius: 1px; background: #ffffff.with-alpha(0.7); }
+    }
+    if clouded: Cloud {
+        w: kind == "partly" || kind == "partly-night" ? 58px : 70px;
+        x: parent.width - self.width - 2px;
+        y: kind == "partly" || kind == "partly-night" ? 32px : 14px;
+        tone: kind == "storm" ? #c3cad6 : kind == "rain" ? #e8eef6 : #ffffff;
+    }
+    if kind == "rain": Path {
+        y: 54px; width: parent.width; height: 26px;
+        viewbox-width: 84; viewbox-height: 26;
+        commands: "M 26 2 L 21 14 M 42 2 L 37 14 M 58 2 L 53 14 M 34 12 L 30 22 M 50 12 L 46 22";
+        stroke: #a9d8ff;
+        stroke-width: 2.6px;
+    }
+    if kind == "snow": Rectangle {
+        y: 58px; width: parent.width; height: 24px;
+        for p in [{ x: 24, y: 2 }, { x: 40, y: 6 }, { x: 56, y: 2 }, { x: 32, y: 14 }, { x: 48, y: 16 }]: Rectangle { x: p.x * 1px; y: p.y * 1px; width: 5px; height: 5px; border-radius: 2.5px; background: #ffffff; }
+    }
+    if kind == "storm": Path {
+        x: 30px; y: 44px; width: 24px; height: 36px;
+        viewbox-width: 24; viewbox-height: 36;
+        commands: "M 14 0 L 2 20 H 11 L 7 36 L 22 13 H 13 L 17 0 Z";
+        fill: #ffd23f;
+    }
+    if kind == "fog": Rectangle {
+        for b[i] in [{ y: 24, w: 64, x: 10 }, { y: 38, w: 52, x: 20 }, { y: 52, w: 60, x: 8 }]: Rectangle { x: b.x * 1px; y: b.y * 1px; width: b.w * 1px; height: 7px; border-radius: 3.5px; background: #ffffff.with-alpha(0.85 - i * 0.15); }
+    }
+    if windy: Path {
+        y: 50px; width: parent.width; height: 30px;
+        viewbox-width: 84; viewbox-height: 30;
+        commands: "M 4 8 H 52 A 6 6 0 1 0 46 2 M 10 18 H 66 A 6 6 0 1 1 60 24";
+        stroke: #ffffff.with-alpha(0.85);
+        stroke-width: 2.4px;
+    }
+}
+
+// Weather as a little sky: the card's gradient follows the conditions and the time of day.
+export component WeatherCard inherits Rectangle {
+    in property <WeatherView> w;
+    property <color> top: !w.day ? #1d2b4f : w.kind == "sun" || w.kind == "partly" ? #3b8df0 : w.kind == "rain" || w.kind == "storm" ? #46607f : w.kind == "snow" ? #8fa9c7 : w.kind == "fog" ? #7c8796 : #5d7899;
+    property <color> bottom: !w.day ? #3b4f7a : w.kind == "sun" || w.kind == "partly" ? #79c1ff : w.kind == "rain" || w.kind == "storm" ? #6f8aa8 : w.kind == "snow" ? #c9d8e8 : w.kind == "fog" ? #a7b0bc : #8ea6c2;
+    border-radius: 14px;
+    background: @linear-gradient(160deg, top 0%, bottom 100%);
+    drop-shadow-blur: 22px;
+    drop-shadow-offset-y: 6px;
+    drop-shadow-color: Theme.shadow;
+    // a soft light in the corner: the sun or the moon's glow (kept inside the card: no clip needed)
+    Rectangle {
+        x: parent.width - 130px;
+        y: 0px;
+        width: 130px;
+        height: 130px;
+        border-radius: 65px;
+        background: @radial-gradient(circle, #ffffff.with-alpha(w.day ? 0.12 : 0.06) 0%, #ffffff.with-alpha(0) 70%);
+    }
+    VerticalLayout {
+        padding: 16px;
+        padding-top: 14px;
+        spacing: 2px;
+        HorizontalLayout {
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text { text: root.w.place; color: #ffffff.with-alpha(0.9); font-size: Theme.t-body; font-weight: 600; overflow: elide; }
+                Text { text: root.w.temp; color: #ffffff; font-size: 44px; font-weight: 300; }
+                Text { text: root.w.text; color: #ffffff.with-alpha(0.92); font-size: Theme.t-body; font-weight: 600; }
+            }
+            WeatherArt { kind: root.w.kind; windy: root.w.windy; }
+        }
+        Text { text: root.w.hilo; color: #ffffff.with-alpha(0.78); font-size: Theme.t-small; wrap: word-wrap; }
+        Rectangle { height: 10px; }
+        Rectangle { height: 1px; background: #ffffff.with-alpha(0.22); }
+        HorizontalLayout {
+            padding-top: 10px;
+            for h in root.w.hours: VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 5px;
+                Text { text: h.time; color: #ffffff.with-alpha(0.8); font-size: 11px; horizontal-alignment: center; }
+                HorizontalLayout { alignment: center; Icon { d: Icons.weather(h.kind); size: 16px; weight: 1.5px; color: #ffffff; } }
+                Text { text: h.temp; color: #ffffff; font-size: Theme.t-small; font-weight: 600; horizontal-alignment: center; }
+            }
+        }
+        if root.w.sun != "": Text { text: root.w.sun; color: #ffffff.with-alpha(0.72); font-size: 11px; horizontal-alignment: center; }
+    }
+}
+
+// Label, value and a thin bar per line (CPU, memory, disk, battery).
+export component StatList inherits VerticalLayout {
+    in property <[Stat]> stats;
+    spacing: 9px;
+    for s in stats: VerticalLayout {
+        spacing: 4px;
+        HorizontalLayout {
+            Text { text: s.label; color: Theme.soft; font-size: Theme.t-small; horizontal-stretch: 1; }
+            Text { text: s.value; color: s.warn ? Theme.warm : Theme.ink; font-size: Theme.t-small; font-weight: 600; }
+        }
+        Rectangle {
+            height: 4px;
+            border-radius: 2px;
+            background: Theme.cell-empty;
+            Rectangle { x: 0; width: parent.width * Math.clamp(s.frac, 0, 1); border-radius: 2px; background: s.warn ? Theme.warm : Theme.ink.with-alpha(0.75); }
+        }
+    }
+}

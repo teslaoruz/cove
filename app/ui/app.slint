@@ -1,0 +1,1461 @@
+import { ScrollView, ComboBox, LineEdit, Palette, Switch } from "std-widgets.slint";
+import { Theme, Icons } from "theme.slint";
+import { ProjectItem, AgentItem, Icon, Panel, Squircle, Orbit, Btn, Tile, TileGrid, SectionHead, ListRow } from "parts.slint";
+import { Month, Heat, Bar, ChartCard, Heatmap, Columns, HBars } from "charts.slint";
+import { DeskRow, Hour, WeatherView, Stat, Orb, Widget, Bubble, Block, WeatherCard, StatList } from "hero.slint";
+export { DeskRow, Hour, WeatherView, Stat }
+export { Month, Heat, Bar }
+export { Theme }
+
+export struct Fact { title: string, value: string, sub: string, warn: bool }
+export struct Group { title: string, items: [ProjectItem] }
+export struct Coll { name: string, count: int, hue: int }
+export struct SessionItem { id: string, title: string, sub: string }
+export struct Msg { text: string, user: bool, blocks: [Block] }
+export struct ScanItem { path: string, collection: string }
+export struct ChatItem { id: string, title: string, when: string }
+export struct RecentChip { item: ProjectItem, id: string, title: string, when: string }
+
+component NavItem inherits Rectangle {
+    in property <string> text;
+    in property <string> icon;
+    in property <int> hue: -1;          // collection dot
+    in property <ProjectItem> project;  // mini tile, when has-project
+    in property <bool> has-project;
+    in property <int> count: -1;
+    in property <int> badge: 0;         // live agents, shown as a green pill
+    in property <bool> active;
+    in property <bool> compact;
+    in property <string> trailing;      // icon path at the far right (e.g. a chevron)
+    in property <bool> has-menu;        // a ⋯ button on hover, and right-click, call menu()
+    callback clicked;
+    callback menu();
+    height: 32px;
+    border-radius: 8px;
+    background: active ? Theme.panel-hi : ta.has-hover ? Theme.panel : transparent;
+    animate background { duration: 90ms; }
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { root.clicked(); }
+    fs := FocusScope {
+        key-pressed(e) => {
+            if e.text == Key.Return || e.text == " " { root.clicked(); return accept; }
+            reject
+        }
+    }
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+        pointer-event(e) => { if has-menu && e.button == PointerEventButton.right && e.kind == PointerEventKind.up { root.menu(); } }
+        mouse-cursor: pointer;
+    }
+    if active: Rectangle { x: 9px; y: 0.5px; width: parent.width - 18px; height: 1px; background: Theme.top; }
+    if fs.has-focus: Rectangle { border-width: 2px; border-color: Theme.accent; border-radius: 9px; }
+    HorizontalLayout {
+        padding-left: compact ? (parent.width - 18px) / 2 : 9px;
+        padding-right: 9px;
+        spacing: 10px;
+        Rectangle {
+            width: 18px;
+            if hue < 0 && !has-project: Icon { d: root.icon; size: 16px; weight: 1.6px; color: root.active ? Theme.accent-text : Theme.soft; }
+            if hue >= 0: Rectangle { width: 9px; height: 9px; border-radius: 4.5px; background: Theme.hue-bottom(root.hue); }
+            if has-project: Squircle { hue: root.project.hue; initials: root.project.initials; icon: root.project.icon; has-icon: root.project.has-icon; size: 18px; }
+        }
+        if !compact: Text {
+            text: root.text;
+            color: root.active ? Theme.ink : Theme.soft;
+            font-size: Theme.t-body;
+            font-weight: root.active ? 600 : 500;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+        if !compact && badge > 0: Rectangle {
+            y: (parent.height - 18px) / 2;
+            height: 18px;
+            width: bt.preferred-width + 12px;
+            border-radius: 9px;
+            background: Theme.live.with-alpha(0.18);
+            bt := Text { text: root.badge + " live"; color: Theme.live; font-size: 11px; font-weight: 650; }
+        }
+        if !compact && count >= 0 && badge == 0: Text { text: root.count; color: Theme.faint; font-size: Theme.t-small; vertical-alignment: center; }
+        if !compact && trailing != "": Icon { y: (parent.height - self.height) / 2; d: root.trailing; size: 14px; color: Theme.faint; }
+        if !compact && has-menu: Rectangle {
+            opacity: ta.has-hover || mta.has-hover ? 1 : 0; // drawn always, so hovering it keeps it
+            y: (parent.height - 22px) / 2;
+            width: 22px;
+            height: 22px;
+            border-radius: 6px;
+            background: mta.has-hover ? Theme.panel-hi : transparent;
+            accessible-role: button;
+            accessible-label: "More for " + root.text;
+            accessible-action-default => { root.menu(); }
+            mta := TouchArea { mouse-cursor: pointer; clicked => { root.menu(); } }
+            Icon { d: Icons.more; size: 16px; weight: 2.2px; color: Theme.soft; }
+        }
+    }
+}
+
+component SideHead inherits Text {
+    color: Theme.faint;
+    font-size: 11px;
+    font-weight: 650;
+    height: 30px;
+    vertical-alignment: bottom;
+    x: 9px;
+}
+
+component Meter inherits VerticalLayout {
+    vertical-stretch: 0;
+    in property <string> label;
+    in property <float> value;    // 0..1
+    in property <string> note;
+    spacing: 5px;
+    HorizontalLayout {
+        Text { text: root.label; color: Theme.soft; font-size: Theme.t-small; horizontal-stretch: 1; }
+        Text { text: Math.round(root.value * 100) + "%"; color: root.value >= 0.8 ? Theme.warm : Theme.ink; font-size: Theme.t-small; font-weight: 650; }
+    }
+    Rectangle {
+        height: 4px;
+        border-radius: 2px;
+        background: Theme.hair;
+        Rectangle {
+            x: 0;
+            width: parent.width * Math.clamp(root.value, 0, 1);
+            border-radius: 2px;
+            background: root.value >= 0.8 ? Theme.warm : Theme.accent;
+        }
+    }
+    if note != "": Text { text: root.note; color: Theme.faint; font-size: 11px; }
+}
+
+component FactCell inherits Rectangle {
+    in property <Fact> f;
+    in property <bool> last;
+    VerticalLayout {
+        padding: 10px;
+        padding-left: 14px;
+        spacing: 1px;
+        Text { text: root.f.title; color: Theme.faint; font-size: Theme.t-small; overflow: elide; }
+        Text { text: root.f.value; color: root.f.warn ? Theme.warm : Theme.ink; font-size: Theme.t-lead; font-weight: 650; overflow: elide; }
+        if root.f.sub != "": Text { text: root.f.sub; color: Theme.faint; font-size: Theme.t-small; overflow: elide; }
+    }
+    if !last: Rectangle { x: parent.width - 1px; y: 10px; width: 1px; height: parent.height - 20px; background: Theme.hair; }
+}
+
+component Field inherits Text {
+    color: Theme.soft;
+    font-size: Theme.t-small;
+    font-weight: 600;
+}
+
+export component AppWindow inherits Window {
+    title: "Project Hub";
+    icon: @image-url("../../assets/claude-launcher.svg");
+    preferred-width: 1280px;
+    preferred-height: 820px;
+    min-width: 480px;
+    min-height: 420px;
+    background: Theme.win;
+    default-font-size: 13px;
+
+    // ---- data from Rust
+    in property <[Fact]> facts;
+    // desk
+    in property <image> orb-frame;
+    in property <string> greeting: "Hello";
+    in property <string> desk-sub;
+    in property <string> desk-date;
+    in property <WeatherView> wx;
+    in property <[Stat]> sys-stats;
+    in property <string> screen-total;
+    in property <[DeskRow]> screen-apps;
+    in property <string> today-line;
+    in property <[DeskRow]> upcoming;
+    in property <string> upcoming-note: "Nothing dated in the next weeks.";
+    in property <[DeskRow]> todos;
+    in property <[DeskRow]> mail;
+    in property <string> mail-note: "Loading…";
+    in property <bool> mail-busy;
+    in property <[DeskRow]> notifs;
+    in property <[DeskRow]> suggest;
+    in-out property <int> sel: -1;   // suggestion picked with the arrow keys; Enter opens it only then
+    in property <[RecentChip]> recent-chips;
+    in property <[ChatItem]> chats;
+    in property <[Msg]> chat-msgs;   // the whole conversation, for the chat page
+    in property <string> chat-id;
+    in property <bool> chat-active;
+    in-out property <string> mode: "code";   // code: open projects and agents; chat: talk with the assistant
+    in-out property <bool> new-from-chat;   // the new-project dialog moves the hub chat into the folder
+    in-out property <length> home-y <=> hsv.content-y;
+    // the page before the chat page: while the chat slides in or out, the desk's scroll still places the bar and orb
+    property <string> from-page: "home";
+    // set from scroll changes, not bound: the desk's height depends on it (bar width -> wrapped query -> input-slot),
+    // and a binding loops through content-height while a flick animates content-y ("Recursion detected")
+    out property <float> dock-raw: 0;
+    function update-dock() {
+        dock-raw = page == "home" || (page == "chat" && from-page == "home") ? Math.clamp(-hsv.content-y / 260px, 0, 1) : 1;
+    }
+    property <float> dock: dock-raw * dock-raw * (3 - 2 * dock-raw);
+    // chat page: the bar sits at the bottom, the conversation scrolls above it, a smaller orb on top
+    property <bool> chatting: page == "chat";
+    // 0 = the bar/orb/mic where the page puts them, 1 = chat layout; animated, so switching Code/Chat glides
+    property <float> ct: chatting ? 1 : 0;
+    animate ct { duration: 460ms; easing: cubic-bezier(0.65, 0, 0.35, 1); }
+    property <length> chat-w: Math.min(820px, stage.width - 48px);   // bar + mic
+    property <length> chat-x: (stage.width - chat-w) / 2;
+    property <length> chat-bar-y: stage.height - 54px - 22px;
+    public function scroll-chat-end() {
+        csv.content-y = Math.min(0px, csv.visible-height - csv.content-height);
+    }
+    // the frozen title in the top strip
+    property <string> here: page == "home" ? (sec == "activity" ? "Activity" : sec == "list" ? "Projects" : "Home") : page == "project" ? proj.name : page == "settings" ? "Settings" : page == "list" ? list-title : "";
+    // set from scroll changes, not bound: the sidebar's look depends on it, which would loop through layout
+    property <string> sec: "home";
+    function update-sec() {
+        sec = page != "home" ? "" : -hsv.content-y + 160px < act-sec.y ? "home" : -hsv.content-y + 160px < proj-sec.y ? "activity" : "list";
+    }
+    changed page => { update-sec(); if page != "chat" { from-page = page; } update-dock(); }
+    // activity page
+    in property <bool> act-loaded;
+    in property <[Fact]> act-facts;
+    in property <Heat> claude-heat;
+    in property <string> claude-sub;
+    in property <Heat> gh-heat;
+    in property <string> gh-title: "GitHub";
+    in property <string> gh-sub;
+    in property <string> gh-note: "Loading…";   // shown instead of the grid until it has data
+    in property <Heat> punch;
+    in property <[Bar]> month-bars;
+    in property <[Bar]> hour-bars;
+    in property <[Bar]> top-bars;
+    in property <[ProjectItem]> recent;
+    in property <[Group]> groups;
+    in property <[AgentItem]> agents;
+    in property <[Coll]> colls;
+    in property <int> project-count;
+    in property <bool> has-cont;
+    in property <bool> loaded;
+    in property <[ProjectItem]> pinned-items;
+    in property <bool> has-usage;
+    in property <string> usage-model;
+    in property <float> usage-five;
+    in property <string> usage-five-note;
+    in property <float> usage-week;
+    in property <string> usage-week-note;
+    in property <ProjectItem> cont;
+    in property <string> cont-quote;
+    in property <string> cont-when;
+    in property <[Msg]> msgs;
+    in-out property <bool> reply-open;
+    in property <string> agent-label;
+    // all-projects / search page
+    in property <string> list-title;
+    in property <[Group]> list-groups;
+    in property <bool> searching;
+    // project page
+    in property <ProjectItem> proj;
+    in property <string> proj-coll;
+    in property <string> proj-facts;
+    in property <string> proj-git;
+    in property <string> proj-desc;
+    in property <[string]> proj-actions;
+    in property <[string]> proj-todos;
+    in property <string> proj-todo-head;
+    in property <[SessionItem]> proj-sessions;
+    in property <bool> proj-github;
+    in property <bool> proj-notes;
+    in property <bool> proj-loading;
+    // settings page
+    in property <[string]> agent-names;
+    in property <int> agent-index;
+    in property <[string]> term-names;
+    in property <int> term-index;
+    in property <[string]> editor-names;
+    in property <int> editor-index;
+    in property <[string]> browser-names;
+    in property <int> browser-index;
+    in property <[string]> files-names;
+    in property <int> files-index;
+    in property <int> theme-index;
+    in property <int> glass-index;
+    in property <string> vault;
+    in property <[ScanItem]> scan-dirs;
+    in property <string> platform-note;
+    in property <[string]> hidden;
+    in property <[string]> engine-names;
+    in property <int> engine-index;
+    in property <[string]> voice-names;
+    in property <int> voice-index;
+    in property <bool> voice-enabled;
+    in property <[string]> speed-names;
+    in property <int> speed-index;
+    in property <bool> talkback;
+    in property <bool> auto-send;
+    in property <string> chat-folder;
+    in property <string> voice-note;
+    // overlays
+    in-out property <bool> new-open;
+    in-out property <string> new-name;
+    in-out property <string> new-location;
+    in-out property <string> new-prompt;
+    in property <string> new-error;
+    in-out property <bool> notice-open;
+    in property <string> notice-title;
+    in property <string> notice-text;
+    in property <string> notice-action;
+
+    in-out property <string> page: "home";      // home | list | project | settings
+    in-out property <string> nav: "home";       // highlighted sidebar item
+    in-out property <string> query;
+    in-out property <bool> listening;
+    out property <bool> orb-hover: orb-el.hover || desk-ta.has-hover;
+    out property <bool> orb-down: orb-el.down;
+    out property <float> orb-mx: orb-el.hover ? orb-el.mx : (desk-ta.absolute-position.x + desk-ta.mouse-x - orb-el.absolute-position.x) / orb-el.width;
+    out property <float> orb-my: orb-el.hover ? orb-el.my : (desk-ta.absolute-position.y + desk-ta.mouse-y - orb-el.absolute-position.y) / orb-el.height;
+
+    // ---- to Rust
+    callback open(int);                    // new session
+    callback continue-project(int);
+    callback show-project(int);
+    callback resume(string);               // session id of the project on the project page
+    callback continue-last();
+    callback jump(int);                    // live agent index
+    callback go(string, string);           // page, arg (collection)
+    callback query-changed(string);
+    callback submit(string);
+    callback open-slot(int);
+    callback tool(string, int);            // editor | terminal | files | github | notes | copy | pin | hide, project idx
+    callback run-action(int);
+    callback pick-agent(int);
+    callback set-choice(string, int);
+    callback set-vault(string);
+    callback add-scan(string, string);
+    callback remove-scan(int);
+    callback create-project(string, string, string);
+    callback notice-go();
+    callback mic();
+    pure callback printable(string) -> bool;
+    callback unhide(int);
+    callback quit();
+    callback toggle-side();
+    callback desk-open(DeskRow);
+    callback refresh-mail();
+    callback summon();                     // the orb: go to the desk, focus the prompt, start listening
+    callback make-project();
+    callback clear-chat();
+    callback scroll-to(length);
+    callback resume-in(int, string);
+    callback open-chat(string);
+    callback new-chat();
+    callback copy-text(string);
+    callback read-aloud(string);
+    callback toggle-chats();
+    in property <bool> listen-ready: true; // false while live speech to text is still loading
+    in property <int> chats-more;  // chats left out of the sidebar
+    in property <bool> chats-all;  // every chat is listed
+    callback open-link(string);
+    callback chat-menu(string, string);  // rename | delete, chat id
+    callback rename-chat(string, string); // chat id, new name
+    callback set-flag(string, bool);     // talkback | auto-send
+    callback set-chat-dir(string);
+    callback test-voice();
+    callback mode-changed(string);       // project idx, session id            // Rust eases home-y to -target
+
+    public function scroll-section(s: string) {
+        root.scroll-to(Math.min(Math.max(0px, hsv.content-height - hsv.visible-height), s == "activity" ? act-sec.y : s == "list" ? proj-sec.y : 0px));
+    }
+    public function focus-input() {
+        search.focus();
+    }
+
+    // set from width changes, not bound: the sidebar width depends on it, which would loop through layout
+    property <bool> narrow;
+    changed width => { narrow = self.width < 900px; }
+    in property <bool> side-collapsed;
+    property <bool> side-compact: narrow || side-collapsed;
+    // chat menu and its dialogs
+    property <string> cm-id;
+    property <string> cm-title;
+    property <string> cm-name;               // the rename field
+    property <length> cm-y;
+    in-out property <string> chat-dialog;   // "" | rename | delete
+    property <ProjectItem> menu-item;
+    property <int> menu-idx: menu-item.idx;
+    property <bool> menu-has-sessions: menu-item.meta != "No sessions yet";
+    property <length> menu-x;
+    property <length> menu-y;
+
+    function show-menu(it: ProjectItem, x: length, y: length) {
+        menu-item = it;
+        menu-x = x;
+        menu-y = y;
+        menu.show();
+    }
+
+    property <bool> sys-dark: Theme.dark;
+    changed sys-dark => { Palette.color-scheme = sys-dark ? ColorScheme.dark : ColorScheme.light; }
+    init => { narrow = self.width < 900px; Palette.color-scheme = Theme.dark ? ColorScheme.dark : ColorScheme.light; focus-input(); }
+
+    keys := FocusScope {
+        capture-key-pressed(e) => {
+            if e.text == Key.Escape {
+                if new-open { new-open = false; return accept; }
+                if notice-open { notice-open = false; return accept; }
+                if query != "" { query = ""; root.query-changed(""); return accept; }
+                if reply-open { reply-open = false; return accept; }
+                if page != "home" { root.go("home", ""); return accept; }
+                root.quit();
+                return accept;
+            }
+            if e.modifiers.alt && !e.modifiers.control {
+                if e.text.character-count == 1 && e.text.is-float() && e.text.to-float() >= 1 && e.text.to-float() <= 8 { root.open-slot(e.text.to-float()); return accept; }
+            }
+            if search.has-focus && e.text == Key.Return && !e.modifiers.shift {
+                // Enter sends what was typed; a suggestion opens only when picked with the arrows (or clicked)
+                if sel >= 0 && sel < suggest.length && query != "" { root.show-project(suggest[sel].idx); sel = -1; query = ""; root.query-changed(""); return accept; }
+                root.submit(query);
+                return accept;
+            }
+            if search.has-focus && query != "" && suggest.length > 0 && page == "home" && mode != "chat" {
+                if e.text == Key.DownArrow { sel = Math.min(sel + 1, suggest.length - 1); return accept; }
+                if e.text == Key.UpArrow && sel >= 0 { sel -= 1; return accept; }
+            }
+            if e.modifiers.control && (e.text == "k" || e.text == "f") { if page == "home" { root.scroll-section("home"); } search.focus(); return accept; }
+            if e.modifiers.control && e.text == "b" { root.toggle-side(); return accept; }
+            if !search.has-focus && !new-open && e.text == "/" { focus-input(); return accept; }
+            reject
+        }
+        key-pressed(e) => {
+            // typing anywhere starts a search
+            if !search.has-focus && !new-open && !e.modifiers.control && !e.modifiers.alt && !e.modifiers.meta && root.printable(e.text) {
+                query += e.text;
+                focus-input();
+                search.set-selection-offsets(query.character-count * 4, query.character-count * 4);
+                root.query-changed(query);
+                return accept;
+            }
+            reject
+        }
+
+        HorizontalLayout {
+            // ---- sidebar
+            Rectangle {
+                width: side-compact ? 64px : 236px;
+                cache-rendering-hint: true; // static between changes: kept as a layer so orb frames do not redraw it
+                animate width { duration: 160ms; easing: ease-out; }
+                background: Theme.side;
+                Rectangle { x: parent.width - 1px; width: 1px; background: Theme.hair; }
+                VerticalLayout {
+                    padding: 12px;
+                    padding-top: 14px;
+                    spacing: 1px;
+                    // identity
+                    HorizontalLayout {
+                        height: 46px;
+                        padding-left: side-compact ? (parent.width - 24px - 30px) / 2 : 6px;
+                        spacing: 10px;
+                        Rectangle {
+                            y: (parent.height - 30px) / 2;
+                            width: 30px;
+                            height: 30px;
+                            border-radius: 8px;
+                            background: @linear-gradient(160deg, Theme.accent.brighter(25%) 0%, Theme.accent 100%);
+                            drop-shadow-blur: 4px;
+                            drop-shadow-offset-y: 1px;
+                            drop-shadow-color: rgba(0, 0, 0, 0.25);
+                            mark-ta := TouchArea {
+                                enabled: side-collapsed && !narrow;
+                                mouse-cursor: self.enabled ? pointer : default;
+                                clicked => { root.toggle-side(); }
+                            }
+                            for q in 4: Rectangle {
+                                x: 8px + Math.mod(q, 2) * 8px;
+                                y: 8px + Math.floor(q / 2) * 8px;
+                                width: 6px;
+                                height: 6px;
+                                border-radius: 1.8px;
+                                background: Theme.on-accent;
+                                opacity: q == 3 ? 0.55 : 1;
+                            }
+                        }
+                        if !side-compact: VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            spacing: 1px;
+                            Text { text: "Project Hub"; color: Theme.ink; font-size: 14px; font-weight: 700; }
+                            Text { text: project-count + " projects"; color: Theme.faint; font-size: 11px; }
+                        }
+                        if !side-compact: HorizontalLayout {
+                            spacing: 0px;
+                            Btn { y: (parent.height - self.height) / 2; width: 30px; height: 30px; icon: Icons.plus; quiet: true; tip: "New project"; clicked => { new-from-chat = false; new-open = true; } }
+                            Btn { y: (parent.height - self.height) / 2; width: 30px; height: 30px; icon: Icons.sidebar; quiet: true; tip: "Collapse sidebar (Ctrl+B)"; clicked => { root.toggle-side(); } }
+                        }
+                    }
+                    Rectangle { height: 10px; }
+                    NavItem { text: "Home"; icon: Icons.home; badge: agents.length; active: sec == "home"; compact: side-compact; clicked => { root.go("home", ""); root.scroll-section("home"); } }
+                    NavItem { text: "Activity"; icon: Icons.chart; active: sec == "activity"; compact: side-compact; clicked => { root.go("home", ""); root.scroll-section("activity"); } }
+                    NavItem { text: "All projects"; icon: Icons.grid; count: project-count; active: sec == "list" || nav == "list"; compact: side-compact; clicked => { root.go("home", ""); root.scroll-section("list"); } }
+                    if pinned-items.length > 0 && !side-compact: SideHead { text: "Pinned"; }
+                    if pinned-items.length > 0 && side-compact: Rectangle { height: 14px; }
+                    for p in pinned-items: NavItem {
+                        text: p.name;
+                        has-project: true;
+                        project: p;
+                        compact: side-compact;
+                        clicked => { root.show-project(p.idx); }
+                    }
+                    if !side-compact: SideHead { text: "Collections"; }
+                    if side-compact: Rectangle { height: 14px; }
+                    for c in colls: NavItem {
+                        text: c.name;
+                        hue: c.hue;
+                        count: c.count;
+                        active: nav == "coll:" + c.name;
+                        compact: side-compact;
+                        clicked => { root.go("coll", c.name); }
+                    }
+                    // chats: conversations with the assistant, kept apart from projects
+                    if !side-compact: HorizontalLayout {
+                        height: 30px;
+                        SideHead { text: "Chats"; horizontal-stretch: 1; }
+                        Rectangle {
+                            y: 8px;
+                            width: 22px;
+                            height: 22px;
+                            border-radius: 6px;
+                            background: nc-ta.has-hover ? Theme.panel : transparent;
+                            accessible-role: button;
+                            accessible-label: "New chat";
+                            accessible-action-default => { root.new-chat(); }
+                            nc-ta := TouchArea { mouse-cursor: pointer; clicked => { root.new-chat(); } }
+                            Icon { d: Icons.plus; size: 14px; color: Theme.faint; }
+                        }
+                    }
+                    if side-compact: Rectangle { height: 14px; }
+                    if side-compact: NavItem { text: "New chat"; icon: Icons.chat; compact: true; clicked => { root.new-chat(); } }
+                    for c in chats: NavItem {
+                        text: c.title;
+                        icon: Icons.chat;
+                        active: mode == "chat" && chat-id == c.id;
+                        compact: side-compact;
+                        has-menu: true;
+                        clicked => { root.open-chat(c.id); }
+                        menu => {
+                            cm-id = c.id;
+                            cm-title = c.title;
+                            cm-y = self.absolute-position.y - root.absolute-position.y + self.height;
+                            chat-pop.show();
+                        }
+                    }
+                    if !side-compact && (chats-more > 0 || chats-all): Rectangle {
+                        height: 26px;
+                        accessible-role: button;
+                        accessible-label: more-t.text;
+                        accessible-action-default => { root.toggle-chats(); }
+                        more-ta := TouchArea { mouse-cursor: pointer; clicked => { root.toggle-chats(); } }
+                        more-t := Text {
+                            x: 36px;
+                            text: chats-all ? "Show fewer" : "Show " + chats-more + " more";
+                            color: more-ta.has-hover ? Theme.soft : Theme.faint;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                    // usage
+                    if has-usage && !side-compact: VerticalLayout {
+                        vertical-stretch: 0;
+                        padding-left: 9px;
+                        padding-right: 9px;
+                        padding-bottom: 12px;
+                        spacing: 10px;
+                        Text { text: "Claude usage" + (usage-model == "" ? "" : " · " + usage-model); color: Theme.faint; font-size: 11px; font-weight: 650; }
+                        Meter { label: "5 hours"; value: usage-five; note: usage-five-note; }
+                        Meter { label: "Week"; value: usage-week; note: usage-week-note; }
+                    }
+                    Rectangle { height: 1px; background: Theme.hair; }
+                    Rectangle { height: 6px; }
+                    agent-row := NavItem {
+                        text: agent-label;
+                        icon: Icons.terminal;
+                        trailing: Icons.chevron;
+                        compact: side-compact;
+                        clicked => { agent-menu.show(); }
+                    }
+                    NavItem { text: "Settings"; icon: Icons.sliders; active: nav == "settings"; compact: side-compact; clicked => { root.go("settings", ""); } }
+                    if side-compact: NavItem { text: "New project"; icon: Icons.plus; compact: true; clicked => { new-from-chat = false; new-open = true; } }
+                    if side-collapsed && !narrow: NavItem { text: "Expand sidebar"; icon: Icons.sidebar; compact: true; clicked => { root.toggle-side(); } }
+                }
+                agent-menu := PopupWindow {
+                    x: 12px;
+                    y: agent-row.y - agent-names.length * 32px - 14px;
+                    width: 212px;
+                    Rectangle {
+                        background: Theme.solid;
+                        border-radius: 12px;
+                        border-width: 1px;
+                        border-color: Theme.hair;
+                        drop-shadow-blur: 24px;
+                        drop-shadow-offset-y: 8px;
+                        drop-shadow-color: rgba(0, 0, 0, 0.30);
+                        VerticalLayout {
+                            padding: 5px;
+                            for name[k] in agent-names: Rectangle {
+                                height: 32px;
+                                border-radius: 7px;
+                                background: ata.has-hover ? Theme.accent.with-alpha(0.22) : transparent;
+                                ata := TouchArea { clicked => { root.set-choice("agent", k); } }
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    Text { text: name; color: Theme.ink; vertical-alignment: center; horizontal-stretch: 1; }
+                                    if k == agent-index: Icon { y: (parent.height - self.height) / 2; d: Icons.check; size: 15px; color: Theme.accent-text; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ---- main column
+            VerticalLayout {
+                horizontal-stretch: 1;
+                stage := Rectangle {
+                    vertical-stretch: 1;
+                    // ======== HOME: one scroll — desk, activity, projects
+                    hsv := ScrollView {
+                        visible: page == "home" || (chatting && from-page == "home" && ct < 1);
+                        opacity: 1 - ct;
+                        changed content-y => { root.update-sec(); root.update-dock(); }
+                        width: parent.width;
+                        height: parent.height;
+                        content-width: self.visible-width;
+                        content-height: hcol.preferred-height;
+                        hcol := VerticalLayout {
+                            width: hsv.visible-width;
+                            padding-bottom: 28px;
+                            spacing: 14px;
+                            alignment: start;
+                            hero := Rectangle {
+                                desk-ta := TouchArea { } // the orb follows the pointer anywhere on the desk
+                                property <bool> wide: self.width >= 1180px;
+                                property <bool> two: self.width >= 700px;
+                                property <length> pad: 24px;
+                                property <length> side-w: 284px;
+                                property <length> below: wide ? 0px : 14px + (two ? Math.max(left.preferred-height, right.preferred-height) : left.preferred-height + 14px + right.preferred-height) + pad;
+                                height: wide
+                                    ? Math.max(hsv.visible-height - 64px, Math.max(mid.preferred-height, Math.max(left.preferred-height, right.preferred-height)) + 2 * pad)
+                                    : Math.max(hsv.visible-height - 64px, mid.preferred-height + 2 * pad) + below;
+                                mid := VerticalLayout {
+                                    x: wide ? 2 * hero.pad + hero.side-w : hero.pad;
+                                    width: wide ? parent.width - 4 * hero.pad - 2 * hero.side-w : parent.width - 2 * hero.pad;
+                                    y: Math.max(hero.pad, ((wide ? parent.height : Math.max(hsv.visible-height, self.preferred-height + 2 * hero.pad)) - self.preferred-height) / 2);
+                                    height: self.preferred-height;
+                                    spacing: 16px;
+                                    orb-slot := Rectangle { height: 400px; }
+                                    VerticalLayout {
+                                        spacing: 4px;
+                                        Text { text: greeting; color: Theme.ink; font-size: 30px; font-weight: 700; horizontal-alignment: center; }
+                                        Text { text: desk-sub; color: Theme.soft; font-size: Theme.t-lead; horizontal-alignment: center; wrap: word-wrap; }
+                                    }
+                                    // the search bar rests here on the desk; it is drawn by the overlay below
+                                    HorizontalLayout {
+                                        alignment: center;
+                                        input-slot := Rectangle { width: Math.min(700px, parent.width); height: 54px + bar.extra * (1 - ct); } // grows with a multi-line message, pushing the desk down
+                                    }
+                                    if query != "" && suggest.length > 0: HorizontalLayout {
+                                        alignment: center;
+                                        Panel {
+                                            width: Math.min(640px, parent.width);
+                                            VerticalLayout {
+                                                padding: 6px;
+                                                for s[k] in suggest: ListRow { title: s.title; sub: s.sub; selected: k == sel; clicked => { root.show-project(s.idx); } }
+                                            }
+                                        }
+                                    }
+                                    if msgs.length > 0 && mode == "code": HorizontalLayout {
+                                        alignment: center;
+                                        VerticalLayout {
+                                            width: Math.min(640px, parent.width);
+                                            spacing: 8px;
+                                            for m in msgs: Bubble { text: m.text; user: m.user; blocks: m.blocks; copy(t) => { root.copy-text(t); } link(u) => { root.open-link(u); } speak(t) => { root.read-aloud(t); } }
+                                            HorizontalLayout {
+                                                alignment: end;
+                                                spacing: 8px;
+                                                if chat-active: Btn { text: "Make it a project"; icon: Icons.plus; clicked => { root.make-project(); } }
+                                                Btn { text: "Clear"; quiet: true; clicked => { root.clear-chat(); } }
+                                            }
+                                        }
+                                    }
+                                    // pick up where you left off: the latest session of each recent project
+                                    if recent-chips.length > 0 && (msgs.length == 0 || mode == "chat"): VerticalLayout {
+                                        cache-rendering-hint: true;
+                                        spacing: 8px;
+                                        Text { text: "Pick up where you left off"; color: Theme.faint; font-size: Theme.t-small; horizontal-alignment: center; }
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            spacing: 8px;
+                                            for c in recent-chips: Rectangle {
+                                                height: 44px;
+                                                width: Math.min(Math.min(230px, (mid.width - 24px) / 4), chip-lay.preferred-width);
+                                                border-radius: 22px;
+                                                background: chip-ta.has-hover ? Theme.panel-hi : Theme.panel;
+                                                border-width: 1px;
+                                                border-color: Theme.hair;
+                                                accessible-role: button;
+                                                accessible-label: "Continue " + c.item.name + ": " + c.title;
+                                                accessible-action-default => { root.resume-in(c.item.idx, c.id); }
+                                                chip-ta := TouchArea { mouse-cursor: pointer; clicked => { root.resume-in(c.item.idx, c.id); } }
+                                                chip-lay := HorizontalLayout {
+                                                    padding-left: 7px;
+                                                    padding-right: 14px;
+                                                    spacing: 8px;
+                                                    Squircle { y: (parent.height - 28px) / 2; hue: c.item.hue; initials: c.item.initials; icon: c.item.icon; has-icon: c.item.has-icon; size: 28px; }
+                                                    VerticalLayout {
+                                                        alignment: center;
+                                                        spacing: 0px;
+                                                        Text { text: c.item.name + "  ·  " + c.when; color: Theme.ink; font-size: Theme.t-small; font-weight: 650; overflow: elide; }
+                                                        Text { text: c.title; color: Theme.faint; font-size: 11px; overflow: elide; }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    HorizontalLayout {
+                                        cache-rendering-hint: true;
+                                        spacing: 12px;
+                                        padding-top: 6px;
+                                        Widget {
+                                            horizontal-stretch: 1;
+                                            title: "Today";
+                                            icon: Icons.sun;
+                                            tint: #ffcf33;
+                                            VerticalLayout {
+                                                padding-left: 4px;
+                                                spacing: 4px;
+                                                alignment: start;
+                                                Text { text: desk-date; color: Theme.ink; font-size: Theme.t-title; font-weight: 700; wrap: word-wrap; }
+                                                if today-line != "": Text { text: today-line; color: Theme.faint; font-size: Theme.t-small; wrap: word-wrap; }
+                                            }
+                                        }
+                                        Widget { horizontal-stretch: 1; title: "System"; icon: Icons.cpu; tint: #8e9bb0; count: false; StatList { stats: sys-stats; } }
+                                        if screen-total != "": Widget { horizontal-stretch: 1; title: "Screen time"; action: screen-total; icon: Icons.hourglass; tint: #2fcfbf; rows: screen-apps; max-rows: 3; }
+                                    }
+                                }
+                                left := VerticalLayout {
+                                    cache-rendering-hint: true; // static between changes: kept as a layer so orb frames do not redraw it
+                                    x: wide ? hero.pad : hero.pad;
+                                    width: wide ? hero.side-w : two ? (parent.width - 2 * hero.pad - 14px) / 2 : parent.width - 2 * hero.pad;
+                                    y: wide ? (parent.height - self.preferred-height) / 2 : mid.y + mid.height + 14px + hero.pad;
+                                    height: self.preferred-height;
+                                    spacing: 12px;
+                                    if wx.has: WeatherCard { w: wx; }
+                                    Widget { title: "Coming up"; icon: Icons.calendar; tint: #ff9f0a; rows: upcoming; note: upcoming-note; max-rows: 5; row-clicked(r) => { root.desk-open(r); } }
+                                    Widget { title: "To do"; icon: Icons.check; tint: #30d158; lead: "check"; rows: todos; note: "Nothing open. Type todo: something to add one."; max-rows: 5; row-clicked(r) => { root.desk-open(r); } }
+                                }
+                                right := VerticalLayout {
+                                    x: wide ? parent.width - hero.pad - hero.side-w : two ? hero.pad + left.width + 14px : hero.pad;
+                                    width: left.width;
+                                    y: wide ? (parent.height - self.preferred-height) / 2 : two ? left.y : left.y + left.height + 14px;
+                                    height: self.preferred-height;
+                                    spacing: 12px;
+                                    Widget {
+                                        title: agents.length > 0 ? "Agents · " + agents.length : "Agents";
+                                        icon: Icons.terminal;
+                                        tint: #c77dff;
+                                        note: agents.length == 0 ? "No agents running." : "";
+                                        VerticalLayout {
+                                            spacing: 0px;
+                                                for a[i] in agents: Rectangle {
+                                                    height: 48px;
+                                                    border-radius: 9px;
+                                                    background: lta.has-hover ? Theme.panel-hi : transparent;
+                                                    accessible-role: button;
+                                                    accessible-label: a.name + ", " + a.state;
+                                                    accessible-action-default => { root.jump(i); }
+                                                    lta := TouchArea { clicked => { root.jump(i); } mouse-cursor: pointer; }
+                                                    HorizontalLayout {
+                                                        padding-left: 2px;
+                                                        padding-right: 8px;
+                                                        spacing: 8px;
+                                                        Rectangle {
+                                                            width: 44px;
+                                                            Squircle { hue: a.hue; initials: a.initials; icon: a.icon; has-icon: a.has-icon; size: 30px; x: (parent.width - 30px) / 2; y: (parent.height - 30px) / 2; }
+                                                            Orbit { state: a.state; size: 30px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+                                                        }
+                                                        VerticalLayout {
+                                                            alignment: center;
+                                                            horizontal-stretch: 1;
+                                                            Text { text: a.name; color: Theme.ink; font-weight: 600; overflow: elide; }
+                                                            Text { text: a.tool; color: Theme.faint; font-size: Theme.t-small; overflow: elide; }
+                                                        }
+                                                        if lta.has-hover: Icon { y: (parent.height - self.height) / 2; d: Icons.jump; size: 16px; color: Theme.soft; }
+                                                        Text {
+                                                            text: a.state == "working" ? "Working" : a.state == "waiting" ? "Needs you" : a.state == "idle" ? "Idle" : "Running";
+                                                            color: a.state == "working" ? Theme.live : a.state == "waiting" ? Theme.warm : Theme.soft;
+                                                            font-size: Theme.t-small;
+                                                            font-weight: 600;
+                                                            vertical-alignment: center;
+                                                        }
+                                                    }
+                                                }
+                                        }
+                                    }
+                                    Widget { cache-rendering-hint: true; title: "Inbox"; icon: Icons.mail; tint: #3d9bff; rows: mail; note: mail-note; action: mail-busy ? "" : "Refresh"; action-clicked => { root.refresh-mail(); } row-clicked(r) => { root.desk-open(r); } }
+                                    Widget { cache-rendering-hint: true; title: "Notifications"; icon: Icons.bell; tint: #ff5c7c; rows: notifs; note: "Nothing new."; max-rows: 4; }
+                                }
+                                if wide: Rectangle {
+                                    y: hsv.visible-height - 64px - 40px;
+                                    height: 30px;
+                                    width: hint.preferred-width + 20px;
+                                    x: (parent.width - self.width) / 2;
+                                    border-radius: 15px;
+                                    background: hta.has-hover ? Theme.panel : transparent;
+                                    opacity: 1 - dock-raw * 2;
+                                    hta := TouchArea { mouse-cursor: pointer; clicked => { root.scroll-section("activity"); } }
+                                    hint := HorizontalLayout {
+                                        spacing: 6px;
+                                        padding-left: 10px;
+                                        Text { text: "Activity"; color: Theme.faint; font-size: Theme.t-small; vertical-alignment: center; }
+                                        Icon { y: (parent.height - self.height) / 2; d: Icons.down; size: 14px; color: Theme.faint; }
+                                    }
+                                }
+                            }
+                            act-sec := VerticalLayout {
+                                cache-rendering-hint: true;
+                                visible: -hsv.content-y + hsv.visible-height > self.y; // not drawn while below the fold
+                                padding-left: 24px;
+                                padding-right: 24px;
+                                padding-top: 12px;
+                                spacing: 14px;
+                            Text { text: "Activity"; color: Theme.ink; font-size: Theme.t-page; font-weight: 700; }
+                            if !act-loaded: Text { text: "Reading your sessions…"; color: Theme.soft; }
+                            if act-loaded: Panel {
+                                height: 70px;
+                                HorizontalLayout {
+                                    for f[i] in act-facts: FactCell { f: f; last: i == act-facts.length - 1; }
+                                }
+                            }
+                            if act-loaded: ChartCard {
+                                title: "Claude Code";
+                                sub: claude-sub;
+                                Heatmap { data: claude-heat; tint: Theme.clay; }
+                            }
+                            ChartCard {
+                                title: gh-title;
+                                sub: gh-sub;
+                                if gh-note == "": Heatmap { data: gh-heat; tint: Theme.live; }
+                                if gh-note != "": Text { text: gh-note; color: Theme.soft; wrap: word-wrap; }
+                            }
+                            if act-loaded: HorizontalLayout {
+                                spacing: 14px;
+                                ChartCard {
+                                    horizontal-stretch: 1;
+                                    title: "Last 30 days";
+                                    sub: "prompts per day";
+                                    Columns { bars: month-bars; tint: Theme.clay; idle: "Point at a bar for the day."; }
+                                }
+                                ChartCard {
+                                    horizontal-stretch: 1;
+                                    title: "Time of day";
+                                    sub: "last year";
+                                    Columns { bars: hour-bars; tint: Theme.accent; idle: "Point at a bar for the hour."; }
+                                }
+                            }
+                            if act-loaded: ChartCard {
+                                title: "When you work";
+                                sub: "weekday × hour, last year";
+                                Heatmap { data: punch; cols: 24; max-cell: 30px; tint: Theme.accent; }
+                            }
+                            if act-loaded && top-bars.length > 0: ChartCard {
+                                title: "Top projects";
+                                sub: "last 90 days";
+                                HBars { bars: top-bars; clicked(i) => { root.show-project(i); } }
+                            }
+                            }
+                            proj-sec := VerticalLayout {
+                                cache-rendering-hint: true;
+                                visible: -hsv.content-y + hsv.visible-height > self.y; // not drawn while below the fold
+                                padding-left: 24px;
+                                padding-right: 24px;
+                                padding-top: 12px;
+                                spacing: 14px;
+                                Text { text: "Projects"; color: Theme.ink; font-size: Theme.t-page; font-weight: 700; }
+                            if project-count == 0: Panel {
+                                VerticalLayout {
+                                    padding: 22px;
+                                    spacing: 10px;
+                                    Text { text: "Where do your projects live?"; color: Theme.ink; font-size: Theme.t-title; font-weight: 700; }
+                                    Text { text: "Add the folders that hold your projects. Every folder inside them shows up here."; color: Theme.soft; wrap: word-wrap; }
+                                    HorizontalLayout { alignment: start; Btn { text: "Add folders"; primary: true; clicked => { root.go("settings", ""); } } }
+                                }
+                            }
+                            SectionHead { text: "Recent"; link: "All projects"; link-clicked => { root.go("list", ""); } }
+                            TileGrid {
+                                items: recent;
+                                open(n) => { root.open(n); }
+                                details(n) => { root.show-project(n); }
+cont(n) => { root.continue-project(n); }
+                                menu(n, x, y) => { root.show-menu(n, x, y); }
+                            }
+                            VerticalLayout {
+                                spacing: 10px;
+                                for g in groups: VerticalLayout {
+                                    spacing: 10px;
+                                    SectionHead { text: g.title; }
+                                    TileGrid {
+                                        items: g.items;
+                                        open(n) => { root.open(n); }
+                                        details(n) => { root.show-project(n); }
+cont(n) => { root.continue-project(n); }
+                                        menu(n, x, y) => { root.show-menu(n, x, y); }
+                                    }
+                                }
+                            }
+                            }
+                        }
+                    }
+
+                    // ======== OTHER PAGES
+                    sv := ScrollView {
+                        visible: page != "home";
+                        width: parent.width;
+                        height: parent.height;
+                        content-width: self.visible-width;
+                        content-height: col.preferred-height;
+                        col := VerticalLayout {
+                            width: sv.visible-width;
+                            padding-top: 84px; // under the pinned search bar
+                            padding-left: 24px;
+                            padding-right: 24px;
+                            padding-bottom: 28px;
+                            spacing: 14px;
+                            alignment: start;
+
+                        // ======== ALL PROJECTS / COLLECTION / SEARCH RESULTS
+                        if page == "list": Text { text: list-title; color: Theme.ink; font-size: Theme.t-page; font-weight: 700; }
+                        if page == "list" && searching && query != "": ListRow {
+                            title: "Ask: “" + query + "”";
+                            sub: "Enter sends it to the assistant";
+                            clicked => { root.submit(query); }
+                        }
+                        if page == "list" && list-groups.length == 0: Text { text: "No project matches. Press Enter to ask the assistant."; color: Theme.soft; }
+                        if page == "list": VerticalLayout {
+                            spacing: 10px;
+                            for g in list-groups: VerticalLayout {
+                                spacing: 10px;
+                                if g.title != "": SectionHead { text: g.title; }
+                                TileGrid {
+                                    items: g.items;
+                                    open(n) => { root.open(n); }
+                                    details(n) => { root.show-project(n); }
+cont(n) => { root.continue-project(n); }
+                                    menu(n, x, y) => { root.show-menu(n, x, y); }
+                                }
+                            }
+                        }
+
+                        // ======== PROJECT
+                        if page == "project": HorizontalLayout {
+                            alignment: start;
+                            Btn { text: "Back"; icon: Icons.back; clicked => { root.go("back", ""); } }
+                        }
+                        if page == "project": HorizontalLayout {
+                            spacing: 16px;
+                            Squircle { hue: proj.hue; initials: proj.initials; icon: proj.icon; has-icon: proj.has-icon; size: 64px; }
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 4px;
+                                Text { text: proj.name; color: Theme.ink; font-size: Theme.t-page; font-weight: 700; overflow: elide; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                                    Rectangle {
+                                        width: chip.preferred-width + 18px;
+                                        height: 20px;
+                                        border-radius: 10px;
+                                        background: Theme.panel;
+                                        border-width: 1px;
+                                        border-color: Theme.hair;
+                                        chip := Text { text: proj-coll; color: Theme.soft; font-size: Theme.t-small; }
+                                    }
+                                    Text { text: proj-facts + (proj-git == "" ? "" : "  ·  " + proj-git); color: Theme.soft; font-size: Theme.t-small; vertical-alignment: center; overflow: elide; }
+                                }
+                            }
+                        }
+                        if page == "project" && proj-desc != "": Text { text: proj-desc; color: Theme.soft; font-size: Theme.t-body; wrap: word-wrap; }
+                        if page == "project": HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            Btn { text: "New session"; icon: Icons.plus; primary: true; clicked => { root.open(proj.idx); } }
+                            if proj.meta != "No sessions yet": Btn { text: "Continue"; icon: Icons.resume; clicked => { root.continue-project(proj.idx); } }
+                            for a[i] in proj-actions: Btn { text: "Run " + a; icon: Icons.play; clicked => { root.run-action(i); } }
+                            Btn { text: "Code"; icon: Icons.code; tip: "Open in editor"; clicked => { root.tool("editor", proj.idx); } }
+                            Btn { text: "Terminal"; icon: Icons.terminal; tip: "Terminal"; clicked => { root.tool("terminal", proj.idx); } }
+                            Btn { text: "Files"; icon: Icons.folder; tip: "Files"; clicked => { root.tool("files", proj.idx); } }
+                            if proj-github: Btn { text: "GitHub"; icon: Icons.globe; tip: "GitHub"; clicked => { root.tool("github", proj.idx); } }
+                            if proj-notes: Btn { text: "Notes"; icon: Icons.notes; tip: "Notes"; clicked => { root.tool("notes", proj.idx); } }
+                        }
+                        if page == "project" && proj-todos.length > 0: SectionHead { text: proj-todo-head; }
+                        if page == "project" && proj-todos.length > 0: Panel {
+                            VerticalLayout {
+                                padding: 14px;
+                                spacing: 8px;
+                                for t in proj-todos: HorizontalLayout {
+                                    spacing: 10px;
+                                    Rectangle { width: 6px; height: 6px; y: 6px; border-radius: 3px; background: Theme.faint; }
+                                    Text { text: t; color: Theme.ink; wrap: word-wrap; horizontal-stretch: 1; }
+                                }
+                            }
+                        }
+                        if page == "project": SectionHead { text: "Sessions"; }
+                        if page == "project" && proj-loading: Text { text: "Loading…"; color: Theme.soft; }
+                        if page == "project" && !proj-loading && proj-sessions.length == 0: Text { text: "No sessions yet"; color: Theme.soft; }
+                        if page == "project": VerticalLayout {
+                            spacing: 6px;
+                            for s in proj-sessions: ListRow { title: s.title; sub: s.sub; clicked => { root.resume(s.id); } }
+                        }
+
+                        // ======== SETTINGS
+                        if page == "settings": Text { text: "Settings"; color: Theme.ink; font-size: Theme.t-page; font-weight: 700; }
+                        if page == "settings": Panel {
+                            VerticalLayout {
+                                padding: 18px;
+                                spacing: 14px;
+                                Text { text: "Apps"; color: Theme.ink; font-size: Theme.t-lead; font-weight: 700; }
+                                GridLayout {
+                                    spacing-horizontal: 18px;
+                                    width: Math.min(parent.width - 36px, 480px);
+                                    spacing-vertical: 10px;
+                                    Row { Field { text: "Coding agent"; vertical-alignment: center; } ComboBox { max-width: 320px; model: agent-names; current-index: agent-index; selected => { root.set-choice("agent", self.current-index); } } }
+                                    Row { Field { text: "Terminal"; vertical-alignment: center; } ComboBox { max-width: 320px; model: term-names; current-index: term-index; selected => { root.set-choice("terminal", self.current-index); } } }
+                                    Row { Field { text: "Code editor"; vertical-alignment: center; } ComboBox { max-width: 320px; model: editor-names; current-index: editor-index; selected => { root.set-choice("editor", self.current-index); } } }
+                                    Row { Field { text: "Browser"; vertical-alignment: center; } ComboBox { max-width: 320px; model: browser-names; current-index: browser-index; selected => { root.set-choice("browser", self.current-index); } } }
+                                    Row { Field { text: "File manager"; vertical-alignment: center; } ComboBox { max-width: 320px; model: files-names; current-index: files-index; selected => { root.set-choice("files", self.current-index); } } }
+                                }
+                            }
+                        }
+                        if page == "settings": Panel {
+                            VerticalLayout {
+                                padding: 18px;
+                                spacing: 14px;
+                                Text { text: "Look"; color: Theme.ink; font-size: Theme.t-lead; font-weight: 700; }
+                                GridLayout {
+                                    spacing-horizontal: 18px;
+                                    width: Math.min(parent.width - 36px, 480px);
+                                    spacing-vertical: 10px;
+                                    Row { Field { text: "Theme"; vertical-alignment: center; } ComboBox { max-width: 320px; model: ["System", "Light", "Dark"]; current-index: theme-index; selected => { root.set-choice("theme", self.current-index); } } }
+                                    Row { Field { text: "Glass"; vertical-alignment: center; } ComboBox { max-width: 320px; model: ["Auto", "Clear", "Frosted", "Solid"]; current-index: glass-index; selected => { root.set-choice("glass", self.current-index); } } }
+                                }
+                                Text { text: platform-note; color: Theme.faint; font-size: Theme.t-small; wrap: word-wrap; }
+                            }
+                        }
+                        if page == "settings": Panel {
+                            VerticalLayout {
+                                padding: 18px;
+                                spacing: 14px;
+                                Text { text: "Voice and chat"; color: Theme.ink; font-size: Theme.t-lead; font-weight: 700; }
+                                GridLayout {
+                                    spacing-horizontal: 18px;
+                                    width: Math.min(parent.width - 36px, 480px);
+                                    spacing-vertical: 10px;
+                                    Row { Field { text: "Talk back"; vertical-alignment: center; } Switch { text: "Speak replies in Chat mode"; checked: talkback; toggled => { root.set-flag("talkback", self.checked); } } }
+                                    Row { Field { text: "Voice engine"; vertical-alignment: center; } ComboBox { max-width: 320px; model: engine-names; current-index: engine-index; selected => { root.set-choice("engine", self.current-index); } } }
+                                    Row { Field { text: "Voice"; vertical-alignment: center; } ComboBox { max-width: 320px; enabled: voice-enabled; model: voice-names; current-index: voice-index; selected => { root.set-choice("voice", self.current-index); } } }
+                                    Row { Field { text: "Speed"; vertical-alignment: center; } ComboBox { max-width: 320px; model: speed-names; current-index: speed-index; selected => { root.set-choice("speed", self.current-index); } } }
+                                    Row { Field { text: ""; } HorizontalLayout { alignment: start; Btn { text: "Test voice"; icon: Icons.play; clicked => { root.test-voice(); } } } }
+                                    Row { Field { text: "Dictation"; vertical-alignment: center; } Switch { text: "Send what you dictate automatically"; checked: auto-send; toggled => { root.set-flag("auto-send", self.checked); } } }
+                                    Row { Field { text: "Chat folder"; vertical-alignment: center; } LineEdit { text: chat-folder; placeholder-text: "~/Chats (press Enter to save)"; accepted(t) => { root.set-chat-dir(t); } } }
+                                }
+                                Text { text: voice-note; color: Theme.faint; font-size: Theme.t-small; wrap: word-wrap; }
+                            }
+                        }
+                        if page == "settings": Panel {
+                            VerticalLayout {
+                                padding: 18px;
+                                spacing: 10px;
+                                Text { text: "Project folders"; color: Theme.ink; font-size: Theme.t-lead; font-weight: 700; }
+                                Text { text: "Every folder inside these is a project. The collection name groups them in the sidebar."; color: Theme.soft; wrap: word-wrap; }
+                                for d[i] in scan-dirs: Rectangle {
+                                    height: 34px;
+                                    Text { x: 0; width: parent.width - 190px; height: parent.height; text: d.path; color: Theme.ink; vertical-alignment: center; overflow: elide; }
+                                    Text { x: parent.width - 180px; width: 140px; height: parent.height; text: d.collection; color: Theme.soft; vertical-alignment: center; overflow: elide; }
+                                    Btn { width: 34px; x: parent.width - 34px; y: (parent.height - self.height) / 2; icon: Icons.close; quiet: true; tip: "Remove " + d.path; clicked => { root.remove-scan(i); } }
+                                }
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    new-dir := LineEdit { placeholder-text: "Folder path"; horizontal-stretch: 1; }
+                                    new-coll := LineEdit { placeholder-text: "Collection"; width: 150px; }
+                                    Btn { text: "Add"; clicked => { root.add-scan(new-dir.text, new-coll.text); new-dir.text = ""; new-coll.text = ""; } }
+                                }
+                                if hidden.length > 0: Text { text: "Hidden projects"; color: Theme.ink; font-size: Theme.t-lead; font-weight: 700; }
+                                for h[i] in hidden: HorizontalLayout {
+                                    spacing: 10px;
+                                    Text { text: h; color: Theme.soft; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                                    Btn { text: "Show"; clicked => { root.unhide(i); } }
+                                }
+                                Text { text: "Notes vault"; color: Theme.ink; font-size: Theme.t-lead; font-weight: 700; }
+                                Text { text: "An Obsidian vault with a note per project (path: in its frontmatter). Descriptions and to-dos come from it."; color: Theme.soft; wrap: word-wrap; }
+                                LineEdit { text: vault; placeholder-text: "No vault (press Enter to save)"; accepted(t) => { root.set-vault(t); } }
+                            }
+                        }
+                    }
+                }
+
+                    // ======== CHAT: the conversation scrolls between the orb and the bar, newest at the bottom
+                    csv := ScrollView {
+                        visible: ct > 0;
+                        opacity: ct;
+                        x: 0;
+                        y: 176px + 40px * (1 - ct);
+                        width: parent.width;
+                        height: Math.max(0px, chat-bar-y - 12px - 176px - bar.extra * ct);
+                        content-width: self.visible-width;
+                        content-height: Math.max(self.visible-height, chat-col.preferred-height);
+                        chat-col := VerticalLayout {
+                            x: chat-x;
+                            width: chat-w;
+                            height: Math.max(csv.visible-height, self.preferred-height); // short chats sit at the bottom, by the bar
+                            padding-bottom: 8px;
+                            spacing: 10px;
+                            alignment: end;
+                            if chat-msgs.length == 0: Text { text: "Ask me anything. Press the Copilot key to talk."; color: Theme.faint; horizontal-alignment: center; }
+                            for m in chat-msgs: Bubble { text: m.text; user: m.user; blocks: m.blocks; copy(t) => { root.copy-text(t); } link(u) => { root.open-link(u); } speak(t) => { root.read-aloud(t); } }
+                        }
+                    }
+                    if ct > 0 && chat-active: HorizontalLayout {
+                        opacity: ct;
+                        x: chat-x;
+                        y: 140px;
+                        width: chat-w;
+                        height: 32px;
+                        alignment: end;
+                        spacing: 6px;
+                        Btn { text: "New chat"; icon: Icons.plus; quiet: true; clicked => { root.new-chat(); } }
+                        Btn { text: "Make it a project"; quiet: true; clicked => { root.make-project(); } }
+                    }
+
+                    // The top strip fades in as the desk scrolls away; a frozen title names where you are.
+                    if dock > 0 && ct < 1: Rectangle {
+                        y: 0;
+                        height: 72px;
+                        background: Theme.solid;
+                        opacity: dock * (1 - ct);
+                        Rectangle { y: parent.height - 1px; height: 1px; background: Theme.hair; }
+                        Text {
+                            x: 24px;
+                            width: 180px;
+                            height: parent.height;
+                            text: here;
+                            color: Theme.ink;
+                            font-size: Theme.t-title;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                    // One search bar: centred on the desk, it slides up into the top strip as the desk scrolls
+                    // away (and stays there on every other page).
+                    bar := Rectangle {
+                        property <length> hx: input-slot.absolute-position.x - stage.absolute-position.x;
+                        property <length> hy: input-slot.absolute-position.y - stage.absolute-position.y;
+                        property <length> tx: 24px + 180px + 12px;
+                        property <float> d: dock * (1 - ct);
+                        property <length> h0: 54px - 10px * d; // one line
+                        property <length> lh: one-line.preferred-height;
+                        // Shift+Enter adds lines, up to 6: in the chat the bar grows upward from the bottom; on the desk
+                        // and docked at the top it grows downward (the desk makes room for it)
+                        property <length> extra: Math.max(0px, Math.min(search.preferred-height, 6 * lh) - lh);
+                        x: (hx + (tx - hx) * dock) * (1 - ct) + chat-x * ct;
+                        y: (hy + (14px - hy) * dock) * (1 - ct) + chat-bar-y * ct - extra * ct;
+                        width: ((input-slot.width - 64px) + (stage.width - tx - 24px - 44px - 10px - (input-slot.width - 64px)) * dock) * (1 - ct) + (chat-w - 64px) * ct;
+                        height: h0 + extra;
+                        border-radius: h0 / 2 - (h0 / 2 - 11px) * d;
+                        one-line := Text { visible: false; text: "Xg"; font-size: Theme.t-lead; }
+                        background: Theme.field;
+                        border-width: 1px;
+                        border-color: listening ? #ff453a : search.has-focus ? Theme.accent : Theme.hair;
+                        drop-shadow-blur: 18px * (1 - d);
+                        drop-shadow-offset-y: 4px;
+                        drop-shadow-color: Theme.shadow;
+                        HorizontalLayout {
+                            padding-left: 14px + 6px * (1 - d);
+                            padding-right: 8px;
+                            spacing: 8px;
+                            Rectangle {
+                                y: parent.height - (bar.h0 + self.height) / 2; // stays on the last line
+                                height: 30px;
+                                width: modes.preferred-width + 6px;
+                                border-radius: 15px;
+                                background: Theme.cell-empty;
+                                modes := HorizontalLayout {
+                                    padding: 3px;
+                                    spacing: 2px;
+                                    for m in [{ key: "code", label: "Code" }, { key: "chat", label: "Chat" }]: Rectangle {
+                                        width: ml.preferred-width + 20px;
+                                        border-radius: 12px;
+                                        background: root.mode == m.key ? Theme.panel-hi : transparent;
+                                        accessible-role: button;
+                                        accessible-label: m.label + " mode";
+                                        accessible-action-default => { root.mode = m.key; root.mode-changed(m.key); }
+                                        TouchArea { mouse-cursor: pointer; clicked => { root.mode = m.key; root.mode-changed(m.key); search.focus(); } }
+                                        ml := Text { text: m.label; color: root.mode == m.key ? Theme.ink : Theme.faint; font-size: Theme.t-small; font-weight: root.mode == m.key ? 650 : 500; }
+                                    }
+                                }
+                            }
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                search := TextInput {
+                                    y: (bar.h0 - bar.lh) / 2;
+                                    width: parent.width;
+                                    height: parent.height - 2 * self.y;
+                                    vertical-alignment: top;
+                                    text <=> root.query;
+                                    color: Theme.ink;
+                                    font-size: Theme.t-lead;
+                                    single-line: false;
+                                    wrap: word-wrap;
+                                    selection-background-color: Theme.accent.with-alpha(0.35);
+                                    accessible-label: "Search or ask";
+                                    edited => { root.sel = -1; root.query-changed(self.text); }
+                                }
+                                if query == "": Text {
+                                    x: 0;
+                                    y: (bar.h0 - bar.lh) / 2;
+                                    height: bar.lh;
+                                    text: listening ? (listen-ready ? "Listening… pause to send" : "Getting ready…") : mode == "chat" ? (chat-active ? "Reply…" : "Talk to me") : dock < 0.5 ? "Ask anything" : "Search or ask";
+                                    color: listening ? #ff453a : Theme.faint;
+                                    font-size: Theme.t-lead;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                }
+                            }
+                            Btn { y: parent.height - (bar.h0 + self.height) / 2; icon: Icons.send; primary: query != ""; quiet: query == ""; tip: "Send"; clicked => { root.submit(query); } }
+                        }
+                    }
+                    // The mic: a round button right of the bar. While the desk scrolls away it rides up with the
+                    // bar and the shrinking orb lands on it, so the orb becomes the mic. Red while listening.
+                    if dock < 0.97 || ct > 0: Rectangle {
+                        property <length> hx: input-slot.absolute-position.x - stage.absolute-position.x + input-slot.width - 54px;
+                        property <length> hy: input-slot.absolute-position.y - stage.absolute-position.y;
+                        property <length> tx: stage.width - 24px - 44px;
+                        property <float> d: dock * (1 - ct);
+                        x: (hx + (tx - hx) * dock) * (1 - ct) + (chat-x + chat-w - 54px) * ct;
+                        y: (hy + (14px - hy) * dock) * (1 - ct) + chat-bar-y * ct;
+                        width: 54px - 10px * d;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        background: listening ? #ff453a : mic-ta.has-hover ? Theme.panel-hi : Theme.field;
+                        border-width: listening ? 0 : 1px;
+                        border-color: Theme.hair;
+                        drop-shadow-blur: 18px * (1 - d);
+                        drop-shadow-offset-y: 4px;
+                        drop-shadow-color: listening ? #ff453a.with-alpha(0.45) : Theme.shadow;
+                        opacity: 1 - Math.max(0, d - 0.6) / 0.37;
+                        accessible-role: button;
+                        accessible-label: listening ? "Stop listening" : "Talk";
+                        accessible-action-default => { root.mic(); }
+                        mic-ta := TouchArea { mouse-cursor: pointer; clicked => { root.mic(); } }
+                        Icon { d: Icons.mic; size: 20px; weight: 1.8px; color: listening ? #ffffff : Theme.ink; }
+                    }
+                    // assistant replies on other pages: a card under the bar
+                    if reply-open && page != "home" && !chatting: Panel {
+                        x: 24px;
+                        y: 82px;
+                        width: Math.min(parent.width - 48px, 640px);
+                        height: self.preferred-height;
+                        VerticalLayout {
+                            padding: 12px;
+                            padding-left: 16px;
+                            padding-right: 44px;
+                            spacing: 6px;
+                            for m in msgs: Bubble { text: m.text; user: m.user; blocks: m.blocks; copy(t) => { root.copy-text(t); } link(u) => { root.open-link(u); } speak(t) => { root.read-aloud(t); } }
+                        }
+                        Btn { x: parent.width - self.width - 6px; y: 6px; icon: Icons.close; quiet: true; tip: "Close"; clicked => { reply-open = false; } }
+                    }
+
+                    // the orb: full size in the desk, morphing into a docked button as the desk scrolls away
+                    orb-el := Orb {
+                        property <length> big: 420px;
+                        property <length> small: 44px;
+                        property <length> hx: orb-slot.absolute-position.x - stage.absolute-position.x + (orb-slot.width - big) / 2;
+                        property <length> hy: orb-slot.absolute-position.y - stage.absolute-position.y;
+                        property <length> dx: stage.width - small - 24px; // lands on the mic button
+                        property <length> dy: 14px;
+                        width: (big + (small - big) * dock) * (1 - ct) + 170px * ct;
+                        height: self.width;
+                        x: (hx + (dx - hx) * dock) * (1 - ct) + (stage.width - 170px) / 2 * ct;
+                        y: (hy + (dy - hy) * dock) * (1 - ct);
+                        frame: orb-frame;
+                        t: dock * (1 - ct);
+                        listening: listening;
+                        clicked => { root.summon(); }
+                    }
+                }
+            }
+        }
+    }
+
+    // ---- project context menu
+    menu := PopupWindow {
+        x: Math.min(menu-x, root.width - 210px);
+        y: Math.min(menu-y, root.height - 330px);
+        width: 200px;
+        Rectangle {
+            background: Theme.solid;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.hair;
+            drop-shadow-blur: 24px;
+            drop-shadow-offset-y: 8px;
+            drop-shadow-color: rgba(0, 0, 0, 0.30);
+            VerticalLayout {
+                padding: 5px;
+                for it[k] in ["New session", "Continue last session", "Details", "Open in editor", "Terminal", "Files", "GitHub", "Copy path", menu-item.pinned ? "Unpin" : "Pin to top", "Hide project"]: Rectangle {
+                    property <bool> off: k == 1 && !menu-has-sessions;
+                    height: 30px;
+                    border-radius: 7px;
+                    background: mta.has-hover && !off ? Theme.accent.with-alpha(0.22) : transparent;
+                    mta := TouchArea {
+                        clicked => {
+                            if k == 0 { root.open(menu-idx); }
+                            if k == 1 && !off { root.continue-project(menu-idx); }
+                            if k == 2 { root.show-project(menu-idx); }
+                            if k == 3 { root.tool("editor", menu-idx); }
+                            if k == 4 { root.tool("terminal", menu-idx); }
+                            if k == 5 { root.tool("files", menu-idx); }
+                            if k == 6 { root.tool("github", menu-idx); }
+                            if k == 7 { root.tool("copy", menu-idx); }
+                            if k == 8 { root.tool("pin", menu-idx); }
+                            if k == 9 { root.tool("hide", menu-idx); }
+                        }
+                    }
+                    Text { x: 10px; text: it; color: off ? Theme.faint : Theme.ink; font-size: Theme.t-body; vertical-alignment: center; height: parent.height; }
+                    if k == 2 || k == 7: Rectangle { y: parent.height + 2px; height: 1px; x: 8px; width: parent.width - 16px; background: Theme.hair; }
+                }
+            }
+        }
+    }
+
+    // ---- new project
+    if new-open: Rectangle {
+        background: rgba(0, 0, 0, 0.45);
+        TouchArea { }
+        Rectangle {
+            width: Math.min(520px, root.width - 40px);
+            height: np.preferred-height;
+            background: Theme.solid;
+            border-radius: 16px;
+            border-width: 1px;
+            border-color: Theme.hair;
+            drop-shadow-blur: 30px;
+            drop-shadow-color: rgba(0, 0, 0, 0.35);
+            np := VerticalLayout {
+                padding: 22px;
+                spacing: 8px;
+                Text { text: new-from-chat ? "Make it a project" : "New project"; color: Theme.ink; font-size: Theme.t-title; font-weight: 700; }
+                Field { text: "Name"; }
+                LineEdit { text <=> new-name; placeholder-text: "my-new-project"; accepted => { root.create-project(new-name, new-location, new-prompt); } }
+                Field { text: "Location"; }
+                LineEdit { text <=> new-location; }
+                if !new-from-chat: Field { text: "What to build (optional)"; }
+                if !new-from-chat: LineEdit { text <=> new-prompt; placeholder-text: "A Flutter app that …"; }
+                if new-from-chat: Text { text: "The chat moves into the new folder and continues there in the terminal."; color: Theme.soft; wrap: word-wrap; }
+                if new-error != "": Text { text: new-error; color: Theme.warm; wrap: word-wrap; }
+                HorizontalLayout {
+                    padding-top: 8px;
+                    spacing: 8px;
+                    alignment: end;
+                    Btn { text: "Cancel"; clicked => { new-open = false; } }
+                    Btn { text: "Create"; primary: true; clicked => { root.create-project(new-name, new-location, new-prompt); } }
+                }
+            }
+        }
+    }
+
+    // ---- chat menu
+    chat-pop := PopupWindow {
+        x: 12px;
+        y: Math.min(cm-y, root.height - 80px);
+        width: 180px;
+        Rectangle {
+            background: Theme.solid;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.hair;
+            drop-shadow-blur: 24px;
+            drop-shadow-offset-y: 8px;
+            drop-shadow-color: rgba(0, 0, 0, 0.30);
+            VerticalLayout {
+                padding: 5px;
+                for it[k] in ["Rename…", "Delete…"]: Rectangle {
+                    height: 30px;
+                    border-radius: 7px;
+                    background: cta.has-hover ? Theme.accent.with-alpha(0.22) : transparent;
+                    accessible-role: button;
+                    accessible-label: it;
+                    accessible-action-default => { cm-name = cm-title; chat-dialog = k == 0 ? "rename" : "delete"; chat-pop.close(); }
+                    cta := TouchArea { clicked => { cm-name = cm-title; chat-dialog = k == 0 ? "rename" : "delete"; } }
+                    Text { x: 10px; text: it; color: k == 1 ? Theme.warm : Theme.ink; font-size: Theme.t-body; vertical-alignment: center; height: parent.height; }
+                }
+            }
+        }
+    }
+    if chat-dialog != "": Rectangle {
+        background: rgba(0, 0, 0, 0.45);
+        TouchArea { clicked => { chat-dialog = ""; } }
+        Rectangle {
+            width: Math.min(460px, root.width - 40px);
+            height: cd.preferred-height;
+            background: Theme.solid;
+            border-radius: 16px;
+            border-width: 1px;
+            border-color: Theme.hair;
+            TouchArea { }
+            cd := VerticalLayout {
+                padding: 22px;
+                spacing: 10px;
+                Text { text: chat-dialog == "rename" ? "Rename chat" : "Delete this chat?"; color: Theme.ink; font-size: Theme.t-lead; font-weight: 700; }
+                if chat-dialog == "rename": LineEdit {
+                    text <=> cm-name;
+                    init => { self.focus(); self.select-all(); }
+                    accepted(t) => { if t != cm-title && t.character-count > 0 { root.rename-chat(cm-id, t); } chat-dialog = ""; } // unchanged = the cut sidebar title: keep the real name
+                }
+                if chat-dialog == "delete": Text { text: "“" + cm-title + "” and its history are removed for good. This cannot be undone."; color: Theme.soft; wrap: word-wrap; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    Btn { text: "Cancel"; clicked => { chat-dialog = ""; } }
+                    if chat-dialog == "rename": Btn { text: "Rename"; primary: true; clicked => { if cm-name != cm-title && cm-name.character-count > 0 { root.rename-chat(cm-id, cm-name); } chat-dialog = ""; } }
+                    if chat-dialog == "delete": Btn { text: "Delete"; primary: true; clicked => { root.chat-menu("delete", cm-id); chat-dialog = ""; } }
+                }
+            }
+        }
+    }
+
+    // ---- notice (e.g. a Run action whose setup is missing)
+    if notice-open: Rectangle {
+        background: rgba(0, 0, 0, 0.45);
+        TouchArea { }
+        Rectangle {
+            width: Math.min(460px, root.width - 40px);
+            height: nl.preferred-height;
+            background: Theme.solid;
+            border-radius: 16px;
+            border-width: 1px;
+            border-color: Theme.hair;
+            nl := VerticalLayout {
+                padding: 22px;
+                spacing: 10px;
+                Text { text: notice-title; color: Theme.ink; font-size: Theme.t-lead; font-weight: 700; wrap: word-wrap; }
+                Text { text: notice-text; color: Theme.soft; wrap: word-wrap; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    Btn { text: "Cancel"; clicked => { notice-open = false; } }
+                    Btn { text: notice-action; primary: true; clicked => { root.notice-go(); } }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,89 @@
+// Tokens. The window is a translucent tint; the compositor (niri / KDE / Hyprland blur,
+// Windows Mica, macOS vibrancy) blurs the desktop behind it. One glass layer only.
+export global Theme {
+    in-out property <bool> dark: true;
+    in-out property <string> mono: "monospace"; // a real family name from Rust: the renderer does not resolve "monospace"
+    in-out property <float> alpha: 0.64;      // window tint opacity, from the Glass setting
+    in-out property <color> accent: #0a84ff;
+    in-out property <color> on-accent: #ffffff;
+    in-out property <color> accent-text: #4aa3ff;
+    in-out property <float> phase: 0;        // animation clock; Rust advances it only while an agent works
+
+    out property <color> win: dark ? rgba(24, 24, 30, alpha) : rgba(244, 244, 248, Math.min(1, alpha + 0.08));
+    out property <color> side: dark ? rgba(0, 0, 0, 0.20) : rgba(255, 255, 255, 0.32);
+    out property <color> panel: dark ? rgba(255, 255, 255, 0.07) : rgba(255, 255, 255, 0.58);
+    out property <color> panel-hi: dark ? rgba(255, 255, 255, 0.12) : rgba(255, 255, 255, 0.86);
+    out property <color> hair: dark ? rgba(255, 255, 255, 0.11) : rgba(0, 0, 0, 0.09);
+    out property <color> top: dark ? rgba(255, 255, 255, 0.13) : rgba(255, 255, 255, 0.95);
+    out property <color> ink: dark ? #f5f5f7 : #1d1d1f;
+    out property <color> soft: dark ? rgba(235, 235, 245, 0.74) : rgba(40, 40, 46, 0.82);
+    out property <color> faint: dark ? rgba(235, 235, 245, 0.62) : rgba(40, 40, 46, 0.76);
+    out property <color> solid: dark ? #2b2b31 : #fbfbfd;
+    out property <color> field: dark ? rgba(0, 0, 0, 0.24) : rgba(255, 255, 255, 0.72);
+    out property <color> live: dark ? #30d158 : #1a9e45;
+    out property <color> warm: dark ? #ff9f0a : #c26a00;
+    out property <color> clay: dark ? #ef8a62 : #c25a34;   // Claude activity
+    out property <color> cell-empty: dark ? rgba(255, 255, 255, 0.07) : rgba(0, 0, 0, 0.06);
+    out property <color> shadow: dark ? rgba(0, 0, 0, 0.22) : rgba(30, 30, 60, 0.10);
+
+    // Type scale 12 / 13 / 15 / 20 / 28
+    out property <length> t-small: 12px;
+    out property <length> t-body: 13px;
+    out property <length> t-lead: 15px;
+    out property <length> t-title: 20px;
+    out property <length> t-page: 28px;
+
+    // Collection hues: (top, bottom) of the squircle fill. White initials sit on the bottom tone.
+    public pure function hue-top(i: int) -> color {
+        return [#3d9bff, #c77dff, #2fcfbf, #ffae3b, #ff5c7c, #8fd14f, #ffcf33, #8494ab, #9a9aa2][Math.mod(i, 9)];
+    }
+    public pure function hue-bottom(i: int) -> color {
+        return [#0a6cf0, #9446d6, #0b8f84, #dd7406, #d42450, #4d9a1c, #c99700, #57667c, #66666e][Math.mod(i, 9)];
+    }
+}
+
+// Line icons on a 24-unit grid, drawn with one stroke weight.
+export global Icons {
+    public pure function weather(kind: string) -> string {
+        return kind == "sun" ? sun : kind == "moon" ? moon : kind == "partly" ? sun : kind == "partly-night" ? moon : kind == "rain" ? rain : kind == "snow" ? snow : kind == "fog" ? fog : kind == "storm" ? storm : cloud;
+    }
+    out property <string> search: "M 10.5 4 a 6.5 6.5 0 1 0 0.01 0 Z M 15.5 15.5 L 20.5 20.5";
+    out property <string> home: "M 3.5 11 L 12 3.8 L 20.5 11 M 6 9.2 L 6 20 L 18 20 L 18 9.2";
+    out property <string> grid: "M 4 4 H 10 V 10 H 4 Z M 14 4 H 20 V 10 H 14 Z M 4 14 H 10 V 20 H 4 Z M 14 14 H 20 V 20 H 14 Z";
+    out property <string> sliders: "M 4 7 H 20 M 4 17 H 20 M 9 4.5 V 9.5 M 15 14.5 V 19.5";
+    out property <string> mic: "M 12 3.5 a 3 3 0 0 0 -3 3 V 12 a 3 3 0 0 0 6 0 V 6.5 a 3 3 0 0 0 -3 -3 Z M 5.5 11.5 a 6.5 6.5 0 0 0 13 0 M 12 18 V 21";
+    out property <string> terminal: "M 4.5 6.5 L 9.5 12 L 4.5 17.5 M 12.5 17.5 H 19.5";
+    out property <string> folder: "M 3.5 6.5 a 1.5 1.5 0 0 1 1.5 -1.5 H 9.5 L 11.5 7 H 19 a 1.5 1.5 0 0 1 1.5 1.5 V 17.5 a 1.5 1.5 0 0 1 -1.5 1.5 H 5 a 1.5 1.5 0 0 1 -1.5 -1.5 Z";
+    out property <string> code: "M 8.5 6.5 L 3 12 L 8.5 17.5 M 15.5 6.5 L 21 12 L 15.5 17.5";
+    out property <string> globe: "M 12 3 a 9 9 0 1 0 0.01 0 Z M 3 12 H 21 M 12 3 C 8.5 6.5 8.5 17.5 12 21 M 12 3 C 15.5 6.5 15.5 17.5 12 21";
+    out property <string> notes: "M 6 3.5 H 14.5 L 18.5 7.5 V 20.5 H 6 Z M 9 11.5 H 15.5 M 9 15.5 H 15.5";
+    out property <string> back: "M 14.5 5.5 L 8 12 L 14.5 18.5";
+    out property <string> plus: "M 12 5 V 19 M 5 12 H 19";
+    out property <string> more: "M 5.5 12 h 0.01 M 12 12 h 0.01 M 18.5 12 h 0.01";
+    out property <string> play: "M 7.5 5 L 18.5 12 L 7.5 19 Z";
+    out property <string> resume: "M 4 12 a 8 8 0 1 0 2.4 -5.7 M 4 4.5 V 8.5 H 8";
+    out property <string> send: "M 4 12 L 20 4.5 L 15.5 20 L 11.5 13 Z";
+    out property <string> pin: "M 9 3.5 H 15 L 14.2 9.5 L 17.5 13 H 6.5 L 9.8 9.5 Z M 12 13 V 20.5";
+    out property <string> jump: "M 8 16 L 16 8 M 9.5 8 H 16 V 14.5";
+    out property <string> chevron: "M 8 10 L 12 6 L 16 10 M 8 14 L 12 18 L 16 14";
+    out property <string> check: "M 5 12.5 L 10 17.5 L 19 7";
+    out property <string> sidebar: "M 4 5 H 20 V 19 H 4 Z M 9.5 5 V 19";
+    out property <string> chart: "M 5 20 V 13 M 10 20 V 5 M 15 20 V 10 M 20 20 V 15";
+    out property <string> calendar: "M 4.5 6.5 H 19.5 V 19.5 H 4.5 Z M 4.5 10.5 H 19.5 M 8.5 4 V 8 M 15.5 4 V 8";
+    out property <string> mail: "M 3.5 6.5 H 20.5 V 18 H 3.5 Z M 3.5 7 L 12 13 L 20.5 7";
+    out property <string> bell: "M 6 16.5 V 11 a 6 6 0 0 1 12 0 V 16.5 L 19.5 18 H 4.5 Z M 10 20.5 H 14";
+    out property <string> sun: "M 12 8 a 4 4 0 1 0 0.01 0 Z M 12 2.5 V 4.5 M 12 19.5 V 21.5 M 2.5 12 H 4.5 M 19.5 12 H 21.5 M 5.3 5.3 L 6.7 6.7 M 17.3 17.3 L 18.7 18.7 M 5.3 18.7 L 6.7 17.3 M 17.3 6.7 L 18.7 5.3";
+    out property <string> down: "M 6 9.5 L 12 15.5 L 18 9.5";
+    out property <string> moon: "M 15.5 3.5 a 8.5 8.5 0 1 0 5 15 a 7 7 0 0 1 -5 -15 Z";
+    out property <string> cloud: "M 7 18.5 H 17 a 4.2 4.2 0 0 0 0.4 -8.4 a 5.6 5.6 0 0 0 -10.9 1.6 a 3.4 3.4 0 0 0 0.5 6.8 Z";
+    out property <string> rain: "M 7 15.5 H 17 a 4 4 0 0 0 0.4 -8 a 5.4 5.4 0 0 0 -10.5 1.5 a 3.3 3.3 0 0 0 0.1 6.5 Z M 8.5 18.5 L 7.5 21 M 12.5 18.5 L 11.5 21 M 16.5 18.5 L 15.5 21";
+    out property <string> snow: "M 7 15.5 H 17 a 4 4 0 0 0 0.4 -8 a 5.4 5.4 0 0 0 -10.5 1.5 a 3.3 3.3 0 0 0 0.1 6.5 Z M 8 19.5 h 0.01 M 12 20.5 h 0.01 M 16 19.5 h 0.01";
+    out property <string> fog: "M 4 8.5 H 20 M 3 12.5 H 21 M 5 16.5 H 19";
+    out property <string> storm: "M 7 14.5 H 17 a 4 4 0 0 0 0.4 -8 a 5.4 5.4 0 0 0 -10.5 1.5 a 3.3 3.3 0 0 0 0.1 6.5 Z M 12.5 15 L 10.5 18.5 H 13.5 L 11.5 22";
+    out property <string> cpu: "M 7 7 H 17 V 17 H 7 Z M 10 3.5 V 7 M 14 3.5 V 7 M 10 17 V 20.5 M 14 17 V 20.5 M 3.5 10 H 7 M 3.5 14 H 7 M 17 10 H 20.5 M 17 14 H 20.5";
+    out property <string> hourglass: "M 6.5 3.5 H 17.5 M 6.5 20.5 H 17.5 M 7.5 3.5 C 7.5 9 16.5 9 16.5 12 C 16.5 15 7.5 15 7.5 20.5 M 16.5 3.5 C 16.5 9 7.5 9 7.5 12 C 7.5 15 16.5 15 16.5 20.5";
+    out property <string> chat: "M 4.5 5.5 H 19.5 V 16 H 10.5 L 6.5 19.5 V 16 H 4.5 Z";
+    out property <string> close: "M 6 6 L 18 18 M 18 6 L 6 18";
+    out property <string> speaker: "M 4 9.5 H 7.5 L 12 5.5 V 18.5 L 7.5 14.5 H 4 Z M 15.5 9 a 4 4 0 0 1 0 6 M 18 6.5 a 7.5 7.5 0 0 1 0 11";
+    out property <string> copy: "M 9 9 H 19.5 V 19.5 H 9 Z M 5.5 15 H 4.5 V 4.5 H 15 V 5.5";
+}
