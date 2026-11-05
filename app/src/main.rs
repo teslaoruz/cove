@@ -1201,7 +1201,10 @@ fn main() {
     cb!(on_mode_changed, |ui, m: SharedString| {
         ui.set_query(ss(""));
         ui.set_suggest(model(vec![]));
-        if m == "chat" { show_chat(&ui) } else { go(&ui, "home", ""); }
+        if m != "chat" { return go(&ui, "home", ""); }
+        // Chat picks up the last conversation, so it is one click (or Ctrl+2) back to where you were
+        let latest = (ui.get_chat_id().is_empty()).then(|| chat::list(1).into_iter().next()).flatten();
+        match latest { Some((id, _, _)) => open_chat(&ui, &id), None => show_chat(&ui) }
     });
     cb!(on_scroll_to, |ui, y: f32| scroll_to(&ui, y));
     cb!(on_toggle_side, |ui| {
@@ -1297,6 +1300,8 @@ fn main() {
         let th = ui.global::<Theme>();
         th.set_phase(th.get_phase() + dt);
         let down = ui.get_orb_down();
+        let (r, g, b) = launch::agent_color(&with(|st| st.s.agent.clone()));
+        globe.tint = [r, g, b].map(|c| 0.55 + 0.45 * c as f32 / 255.0); // mostly white, leaning to the agent's colour
         busy = globe.step(&orb::Input { dt, pointer: hover.then_some(p), voice, down });
         draw(&ui, &globe);
     });

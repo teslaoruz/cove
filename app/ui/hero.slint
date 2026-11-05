@@ -172,12 +172,12 @@ export component Bubble inherits HorizontalLayout {
             padding-right: 13px;
             spacing: 7px;
             for b in root.blocks: VerticalLayout {
-                if b.kind == "p": StyledText { text: b.rich; default-color: root.ink; default-font-size: Theme.t-body; link-color: root.user ? Theme.on-accent : Theme.accent-text; link-clicked(u) => { root.link(u); } }
-                if b.kind == "h": StyledText { text: b.rich; default-color: root.ink; default-font-size: Theme.t-lead; link-color: Theme.accent-text; }
+                if b.kind == "p": StyledText { height: self.preferred-height; /* measured at its own width: through the for/if blocks Slint counted one line */ text: b.rich; default-color: root.ink; default-font-size: Theme.t-body; link-color: root.user ? Theme.on-accent : Theme.accent-text; link-clicked(u) => { root.link(u); } }
+                if b.kind == "h": StyledText { height: self.preferred-height; /* measured at its own width: through the for/if blocks Slint counted one line */ text: b.rich; default-color: root.ink; default-font-size: Theme.t-lead; link-color: Theme.accent-text; }
                 if b.kind == "quote": HorizontalLayout {
                     spacing: 9px;
                     Rectangle { width: 3px; border-radius: 1.5px; background: Theme.hair; }
-                    StyledText { text: b.rich; default-color: Theme.soft; default-font-size: Theme.t-body; link-color: Theme.accent-text; link-clicked(u) => { root.link(u); } }
+                    StyledText { height: self.preferred-height; /* measured at its own width: through the for/if blocks Slint counted one line */ text: b.rich; default-color: Theme.soft; default-font-size: Theme.t-body; link-color: Theme.accent-text; link-clicked(u) => { root.link(u); } }
                 }
                 if b.kind == "rule": Rectangle { height: 1px; background: Theme.hair; }
                 if b.kind == "code" || b.kind == "table": Rectangle {

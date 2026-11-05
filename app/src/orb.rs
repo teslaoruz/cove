@@ -16,6 +16,7 @@ pub struct Orb {
     spin_v: [f32; 2],    // its velocity, so a flick keeps turning and slows down
     prev: Option<(f32, f32)>, // pointer at the last step while the button is down
     burst: [f32; 3],     // click ripple: position (sphere radii) and strength
+    pub tint: [f32; 3], // particle colour: the agent in use, mixed with white
 }
 
 pub struct Input {
@@ -45,7 +46,7 @@ impl Orb {
         // cheap deterministic randomness (no rand crate): a hashed sine per value
         let rnd = |i: usize, k: f32| ((i as f32 * 12.9898 + k * 78.233).sin() * 43758.547).fract().abs();
         let wander = (0..n).map(|i| [rnd(i, 1.0) * 6.283, rnd(i, 2.0) * 6.283, rnd(i, 3.0) * 6.283, 0.5 + rnd(i, 4.0)]).collect();
-        Orb { home, wander, look: [0.0; 2], touch: [0.5, 0.5, 0.0], level: 0.0, clock: 0.0, spin: [0.0; 2], spin_v: [0.0; 2], prev: None, burst: [0.0; 3] }
+        Orb { home, wander, look: [0.0; 2], touch: [0.5, 0.5, 0.0], level: 0.0, clock: 0.0, spin: [0.0; 2], spin_v: [0.0; 2], prev: None, burst: [0.0; 3], tint: [1.0; 3] }
     }
 
     /// Advance time and the eased inputs. Returns true while something is still changing beyond the drift.
@@ -141,14 +142,14 @@ impl Orb {
             let sx = c + x1 * r * rad * persp;
             let syy = c + y2 * r * rad * persp;
             let depth = (z2 + 1.0) * 0.5;
-            disc(img, px, sx, syy, (0.9 + 1.6 * depth + lv * 0.8) * k, ((0.18 + 0.72 * depth * depth) * (1.0 + lv * 0.4)).min(1.0));
+            disc(img, px, sx, syy, (0.9 + 1.6 * depth + lv * 0.8) * k, ((0.18 + 0.72 * depth * depth) * (1.0 + lv * 0.4)).min(1.0), self.tint);
         }
         Image::from_rgba8_premultiplied(buf)
     }
 }
 
-/// Soft anti-aliased white disc, added onto premultiplied pixels so overlaps glow.
-fn disc(img: &mut [Rgba8Pixel], px: u32, cx: f32, cy: f32, r: f32, a: f32) {
+/// Soft anti-aliased disc in `tint` (1 = white per channel), added onto premultiplied pixels so overlaps glow.
+fn disc(img: &mut [Rgba8Pixel], px: u32, cx: f32, cy: f32, r: f32, a: f32, tint: [f32; 3]) {
     let (x0, x1) = ((cx - r - 1.0).floor().max(0.0) as u32, ((cx + r + 1.0).ceil().max(0.0) as u32).min(px));
     let (y0, y1) = ((cy - r - 1.0).floor().max(0.0) as u32, ((cy + r + 1.0).ceil().max(0.0) as u32).min(px));
     for y in y0..y1 {
@@ -157,9 +158,9 @@ fn disc(img: &mut [Rgba8Pixel], px: u32, cx: f32, cy: f32, r: f32, a: f32) {
             let cov = (r + 0.5 - d).clamp(0.0, 1.0) * a;
             if cov > 0.0 {
                 let p = &mut img[(y * px + x) as usize];
-                let v = (cov * 255.0) as u16;
-                let add = |c: u8| (c as u16 + v).min(255) as u8;
-                (p.r, p.g, p.b, p.a) = (add(p.r), add(p.g), add(p.b), add(p.a));
+                let v = cov * 255.0;
+                let add = |c: u8, t: f32| (c as u16 + (v * t) as u16).min(255) as u8;
+                (p.r, p.g, p.b, p.a) = (add(p.r, tint[0]), add(p.g, tint[1]), add(p.b, tint[2]), add(p.a, 1.0));
             }
         }
     }
