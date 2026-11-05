@@ -982,6 +982,7 @@ fn main() {
     apply_theme(&ui);
     ui.global::<Theme>().set_mono(ss(&platform::mono_font()));
     ui.set_side_collapsed(with(|st| st.s.sidebar_collapsed));
+    ui.set_side_w(with(|st| st.s.sidebar_width).clamp(180.0, 420.0));
     show_mail(&ui);
     if with(|st| st.brief.as_ref().is_none_or(|b| chrono::Local::now().timestamp() - b.fetched > 3 * 3600)) { // the Refresh link fetches any time
         fetch_mail(&ui);
@@ -1087,6 +1088,34 @@ fn main() {
             rescan(&ui);
         }
     });
+    cb!(on_side_width, |_ui, w: f32| with(|st| { st.s.sidebar_width = w; save(st); }));
+    cb!(on_zoom, |ui, dir: i32| { let z = zoom_step(with(|st| st.s.zoom), dir); set_zoom(&ui, z); });
+    {
+        // Ctrl+wheel (and a Windows touchpad pinch, which arrives as one) zooms; so does a macOS pinch
+        use slint::winit_030::{winit::event::{MouseScrollDelta, WindowEvent as W}, EventResult, WinitWindowAccessor};
+        let w = ui.as_weak();
+        let ctrl = std::cell::Cell::new(false);
+        let pinch = std::cell::Cell::new(0.0f64);
+        ui.window().on_winit_window_event(move |_, e| {
+            let Some(ui) = w.upgrade() else { return EventResult::Propagate };
+            match e {
+                W::ModifiersChanged(m) => ctrl.set(m.state().control_key()),
+                W::MouseWheel { delta, .. } if ctrl.get() => {
+                    let dy = match delta { MouseScrollDelta::LineDelta(_, y) => *y as f64, MouseScrollDelta::PixelDelta(p) => p.y };
+                    if dy != 0.0 { let z = zoom_step(with(|st| st.s.zoom), if dy > 0.0 { 1 } else { -1 }); set_zoom(&ui, z); }
+                    return EventResult::PreventDefault;
+                }
+                W::PinchGesture { delta, .. } => {
+                    pinch.set(pinch.get() + delta);
+                    if pinch.get().abs() > 0.1 { let z = zoom_step(with(|st| st.s.zoom), pinch.get().signum() as i32); pinch.set(0.0); set_zoom(&ui, z); }
+                    return EventResult::PreventDefault;
+                }
+                W::ScaleFactorChanged { .. } => { let w = ui.as_weak(); slint::Timer::single_shot(Duration::from_millis(50), move || { if let Some(ui) = w.upgrade() { apply_zoom(&ui) } }); }
+                _ => {}
+            }
+            EventResult::Propagate
+        });
+    }
     cb!(on_set_local_model, |ui, v: SharedString| {
         with(|st| { st.s.local_model = v.trim().to_string(); save(st); chat::set_agent(&st.s.agent, &st.s.local_model); });
         refresh_settings(&ui);
@@ -1322,6 +1351,11 @@ fn main() {
         }
     }
 
+    {
+        // the window exists once the event loop runs: apply the saved zoom then
+        let w = ui.as_weak();
+        slint::Timer::single_shot(Duration::from_millis(30), move || { if let Some(ui) = w.upgrade() { set_zoom(&ui, with(|st| st.s.zoom)) } });
+    }
     if listen_now {
         // launched by the listen key: only open and focus; the next press listens
         slint::Timer::single_shot(Duration::from_millis(600), focus_self);
@@ -1772,6 +1806,38 @@ fn finish_live(ui: &AppWindow) {
 }
 
 /// Bring this window to the front (compositors that allow it: niri, Hyprland, sway).
+/// Browser zoom steps.
+const ZOOMS: &[f32] = &[0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
+
+/// The next zoom step up (+1), down (-1), or back to 100 % (0).
+fn zoom_step(z: f32, dir: i32) -> f32 {
+    match dir {
+        0 => 1.0,
+        d if d > 0 => ZOOMS.iter().copied().find(|s| *s > z + 0.001).unwrap_or(2.0),
+        _ => ZOOMS.iter().rev().copied().find(|s| *s < z - 0.001).unwrap_or(0.5),
+    }
+}
+
+/// Scale the whole window: the desktop's own scale times the user's zoom.
+fn apply_zoom(ui: &AppWindow) {
+    use slint::winit_030::WinitWindowAccessor;
+    let zoom = with(|st| st.s.zoom).clamp(0.5, 2.0);
+    let Some(base) = ui.window().with_winit_window(|w| w.scale_factor() as f32) else { return };
+    let sf = base * zoom;
+    let w = ui.window();
+    if (w.scale_factor() - sf).abs() < 0.001 {
+        return;
+    }
+    w.dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged { scale_factor: sf });
+    w.dispatch_event(slint::platform::WindowEvent::Resized { size: w.size().to_logical(sf) });
+}
+
+fn set_zoom(ui: &AppWindow, z: f32) {
+    with(|st| { st.s.zoom = z.clamp(0.5, 2.0); save(st); });
+    apply_zoom(ui);
+    ui.set_zoom_label(ss(format!("{:.0}%", with(|st| st.s.zoom) * 100.0)));
+}
+
 fn agent_color(agent: &str) -> slint::Color {
     let (r, g, b) = launch::agent_color(agent);
     slint::Color::from_rgb_u8(r, g, b)
@@ -1847,4 +1913,16 @@ fn listen(ui: &AppWindow) {
     }
     ui.invoke_focus_input();
     ui.invoke_mic();
+}
+
+#[cfg(test)]
+mod zoom_tests {
+    #[test]
+    fn zoom_steps_like_a_browser() {
+        assert_eq!(super::zoom_step(1.0, 1), 1.1);
+        assert_eq!(super::zoom_step(1.0, -1), 0.9);
+        assert_eq!(super::zoom_step(2.0, 1), 2.0);
+        assert_eq!(super::zoom_step(0.5, -1), 0.5);
+        assert_eq!(super::zoom_step(1.33, 0), 1.0);
+    }
 }

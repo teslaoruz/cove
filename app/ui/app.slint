@@ -273,6 +273,8 @@ export component AppWindow inherits Window {
     in property <color> agent-tint;
     in property <string> local-model;
     callback set-local-model(string);
+    callback zoom(int);                  // +1 in, -1 out, 0 back to 100 %
+    in property <string> zoom-label: "100%";
     in property <int> agent-index;
     in property <[string]> term-names;
     in property <int> term-index;
@@ -382,6 +384,8 @@ export component AppWindow inherits Window {
     changed width => { narrow = self.width < 900px; }
     in property <bool> side-collapsed;
     property <bool> side-compact: narrow || side-collapsed;
+    in-out property <length> side-w: 236px;  // dragged by the sidebar's edge
+    callback side-width(length);             // saves it when the drag ends
     // chat menu and its dialogs
     property <string> cm-id;
     property <string> cm-title;
@@ -429,6 +433,10 @@ export component AppWindow inherits Window {
                 if e.text == Key.DownArrow { sel = Math.min(sel + 1, suggest.length - 1); return accept; }
                 if e.text == Key.UpArrow && sel >= 0 { sel -= 1; return accept; }
             }
+            // zoom like a browser
+            if e.modifiers.control && (e.text == "=" || e.text == "+") { root.zoom(1); return accept; }
+            if e.modifiers.control && (e.text == "-" || e.text == "_") { root.zoom(-1); return accept; }
+            if e.modifiers.control && e.text == "0" { root.zoom(0); return accept; }
             // pages by number, like browser tabs
             if e.modifiers.control && e.text == "1" { root.go("home", ""); root.scroll-section("home"); return accept; }
             if e.modifiers.control && e.text == "2" { root.mode-changed("chat"); return accept; }
@@ -455,11 +463,21 @@ export component AppWindow inherits Window {
         HorizontalLayout {
             // ---- sidebar
             Rectangle {
-                width: side-compact ? 64px : 236px;
+                width: side-compact ? 64px : side-w;
                 cache-rendering-hint: true; // static between changes: kept as a layer so orb frames do not redraw it
-                animate width { duration: 160ms; easing: ease-out; }
+                animate width { duration: edge-ta.pressed ? 0ms : 160ms; easing: ease-out; } // no lag while dragging
                 background: Theme.side;
-                Rectangle { x: parent.width - 1px; width: 1px; background: Theme.hair; }
+                Rectangle { x: parent.width - 1px; width: 1px; background: edge-ta.has-hover || edge-ta.pressed ? Theme.accent : Theme.hair; }
+                // drag the edge to resize; double-click resets
+                edge-ta := TouchArea {
+                    enabled: !side-compact;
+                    x: parent.width - 4px;
+                    width: 8px;
+                    mouse-cursor: col-resize;
+                    moved => { if self.pressed { root.side-w = Math.clamp(root.side-w + self.mouse-x - self.pressed-x, 180px, 420px); } }
+                    pointer-event(e) => { if e.kind == PointerEventKind.up { root.side-width(root.side-w); } }
+                    double-clicked => { root.side-w = 236px; root.side-width(236px); }
+                }
                 VerticalLayout {
                     padding: 12px;
                     padding-top: 14px;
@@ -1081,6 +1099,7 @@ cont(n) => { root.continue-project(n); }
                                     spacing-horizontal: 18px;
                                     width: Math.min(parent.width - 36px, 480px);
                                     spacing-vertical: 10px;
+                                    Row { Field { text: "Zoom"; vertical-alignment: center; } HorizontalLayout { spacing: 6px; alignment: start; Btn { text: "−"; clicked => { root.zoom(-1); } } Text { text: zoom-label; color: Theme.ink; vertical-alignment: center; min-width: 48px; horizontal-alignment: center; } Btn { text: "+"; clicked => { root.zoom(1); } } Btn { text: "Reset"; quiet: true; clicked => { root.zoom(0); } } } }
                                     Row { Field { text: "Theme"; vertical-alignment: center; } ComboBox { max-width: 320px; model: ["System", "Light", "Dark"]; current-index: theme-index; selected => { root.set-choice("theme", self.current-index); } } }
                                     Row { Field { text: "Glass"; vertical-alignment: center; } ComboBox { max-width: 320px; model: ["Auto", "Clear", "Frosted", "Solid"]; current-index: glass-index; selected => { root.set-choice("glass", self.current-index); } } }
                                 }

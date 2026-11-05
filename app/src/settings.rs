@@ -39,6 +39,8 @@ pub struct Settings {
     pub voice_speed: f32,     // 1 = normal
     pub auto_update: bool,    // install new releases by itself (installed copies only)
     pub local_model: String,  // Ollama model the agent runs on, "" = the agent's own models
+    pub sidebar_width: f32,   // logical px
+    pub zoom: f32,            // page zoom, 1 = 100 %, like a browser
     pub mail: bool,           // Inbox: ask claude for unread mail and events; off until the user turns it on
 }
 
@@ -67,6 +69,8 @@ impl Default for Settings {
             voice_speed: 1.0,
             auto_update: true,
             mail: false,
+            zoom: 1.0,
+            sidebar_width: 236.0,
             local_model: String::new(),
         }
     }
