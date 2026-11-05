@@ -74,7 +74,8 @@ struct State {
     live_base: String, // what the box held when listening started
     voice_msg: bool, // the next submit comes from speech
     talking: bool, // the last message was spoken, so its reply is read aloud
-    chats_all: bool, // the sidebar lists every chat, not just the latest
+    chats_all: bool,
+    carry: Option<String>, // a conversation handed over from another agent, sent with the next message // the sidebar lists every chat, not just the latest
     sys: Option<(f32, u64, u64)>, // CPU %, memory used, memory total
 }
 
@@ -286,6 +287,12 @@ fn refresh_home(ui: &AppWindow) {
         ui.set_project_count(st.projects.len() as i32);
         ui.set_agent_label(ss(launch::AGENTS.iter().find(|a| a.0 == st.s.agent).map(|a| a.1).unwrap_or("Claude Code")));
         ui.set_agent_tint(agent_color(&st.s.agent));
+        let ca = launch::chat_agent(&st.s);
+        ui.set_chat_agent_label(ss(launch::label(ca)));
+        ui.set_chat_agent_tint(agent_color(ca));
+        let chat_list: Vec<&str> = launch::CHAT_AGENTS.iter().copied().filter(|a| *a == ca || launch::which(a).is_some()).collect();
+        ui.set_chat_agent_names(model(chat_list.iter().map(|a| ss(launch::label(a))).collect()));
+        ui.set_chat_agent_colors(model(chat_list.iter().map(|a| agent_color(a)).collect()));
     });
     refresh_agents(ui);
 }
@@ -931,7 +938,7 @@ fn main() {
     }
     let settings = Settings::load();
     chat::set_dir(&settings.chat_dir);
-    chat::set_agent(&settings.agent, &settings.local_model);
+    chat::set_agent(launch::chat_agent(&settings), &settings.local_model);
     if std::env::args().any(|a| a == "--list") {
         // print the projects the app finds, for checking the scan settings
         for p in scan::collect(&settings) {
@@ -977,7 +984,7 @@ fn main() {
         s: settings, projects: vec![], colls: vec![], vault_idx: vec![], notes: HashMap::new(), art: serde_json::Value::Null,
         images: HashMap::new(), recent: vec![], days: HashMap::new(), agents: vec![], status: None, slots: vec![], cur: None,
         cur_actions: vec![], last_page: "home".into(), msgs: vec![], notice: None, choices: HashMap::new(),
-        sys_dark: platform::system_dark().unwrap_or(true), roots: roots.clone(), act_started: false, prompts: HashMap::new(), chat_sid: None, brief, desk: None, tween: slint::Timer::default(), mic: None, sys: None, speech: None, clips: Default::default(), voice_until: None, stopped: None, submit_timer: slint::Timer::default(), key: None, live: None, live_sent: 0, live_base: String::new(), voice_msg: false, talking: false, chats_all: false,
+        sys_dark: platform::system_dark().unwrap_or(true), roots: roots.clone(), act_started: false, prompts: HashMap::new(), chat_sid: None, brief, desk: None, tween: slint::Timer::default(), mic: None, sys: None, speech: None, clips: Default::default(), voice_until: None, stopped: None, submit_timer: slint::Timer::default(), key: None, live: None, live_sent: 0, live_base: String::new(), voice_msg: false, talking: false, chats_all: false, carry: None,
     }));
     apply_theme(&ui);
     ui.global::<Theme>().set_mono(ss(&platform::mono_font()));
@@ -1083,10 +1090,30 @@ fn main() {
         if changed { apply_theme(&ui); refresh_home(&ui); refresh_settings(&ui); }
         if changed && key == "agent" {
             // sessions, activity, running agents and chats all come from the selected agent
-            with(|st| { st.act_started = false; st.agents.clear(); chat::set_agent(&st.s.agent, &st.s.local_model); });
+            with(|st| { st.act_started = false; st.agents.clear(); chat::set_agent(launch::chat_agent(&st.s), &st.s.local_model); });
             clear_chat(&ui);
             rescan(&ui);
         }
+    });
+    cb!(on_chat_in_terminal, |ui| {
+        // the same conversation, as a full session of its agent
+        let Some(sid) = with(|st| st.chat_sid.clone()) else { return say(&ui, "Send a message first, then open it in the terminal.") };
+        let mut s = with(|st| st.s.clone());
+        s.agent = launch::chat_agent(&s).to_string();
+        report(&ui, launch::agent(&s, &chat::chat_dir().to_string_lossy(), Mode::Resume(&sid)), "the terminal");
+    });
+    cb!(on_chat_switch, |ui, k: i32| {
+        let list: Vec<&str> = with(|st| { let ca = launch::chat_agent(&st.s).to_string(); launch::CHAT_AGENTS.iter().copied().filter(|a| *a == ca || launch::which(a).is_some()).collect() });
+        let Some(&to) = list.get(k as usize) else { return };
+        let (from, sid) = with(|st| (launch::chat_agent(&st.s).to_string(), st.chat_sid.clone()));
+        if to == from { return; }
+        // read the conversation while the old agent is still the chat agent, then hand it over
+        let carry = sid.map(|id| chat::history(&id)).filter(|h| !h.is_empty()).map(|h| handover(&h, launch::label(&from)));
+        with(|st| { st.s.chat_agent = to.to_string(); save(st); chat::set_agent(launch::chat_agent(&st.s), &st.s.local_model); st.chat_sid = None; st.carry = carry.clone(); });
+        ui.set_chat_id(ss(""));
+        refresh_home(&ui);
+        refresh_chats(&ui);
+        say(&ui, &if carry.is_some() { format!("{} takes it from here, with this conversation.", launch::label(to)) } else { format!("Chat now uses {}.", launch::label(to)) });
     });
     cb!(on_side_width, |_ui, w: f32| with(|st| { st.s.sidebar_width = w; save(st); }));
     cb!(on_zoom, |ui, dir: i32| { let z = zoom_step(with(|st| st.s.zoom), dir); set_zoom(&ui, z); });
@@ -1117,7 +1144,7 @@ fn main() {
         });
     }
     cb!(on_set_local_model, |ui, v: SharedString| {
-        with(|st| { st.s.local_model = v.trim().to_string(); save(st); chat::set_agent(&st.s.agent, &st.s.local_model); });
+        with(|st| { st.s.local_model = v.trim().to_string(); save(st); chat::set_agent(launch::chat_agent(&st.s), &st.s.local_model); });
         refresh_settings(&ui);
     });
     cb!(on_set_vault, |ui, v: SharedString| {
@@ -1665,12 +1692,29 @@ fn unthink(ui: &AppWindow) {
     show_msgs(ui);
 }
 
+/// The conversation so far, as a first message for the agent that takes over (the newest part, if long).
+fn handover(h: &[(String, bool)], from: &str) -> String {
+    let mut t: String = h.iter().map(|(m, user)| format!("{}: {m}\n\n", if *user { "Me" } else { "Assistant" })).collect();
+    if t.len() > 16_000 {
+        let cut = t.len() - 16_000;
+        let cut = (cut..t.len()).find(|i| t.is_char_boundary(*i)).unwrap_or(cut);
+        t = format!("…{}", &t[cut..]);
+    }
+    format!("We were talking with {from}, which cannot continue. Here is our conversation so far:\n\n{t}Carry on from there. My next message:\n\n")
+}
+
+/// Signs that an agent stopped because of its plan's limits, so the user can move the chat to another agent.
+fn hit_limit(e: &str) -> bool {
+    let e = e.to_lowercase();
+    ["limit", "quota", "429", "rate", "exceeded", "usage", "credit"].iter().any(|w| e.contains(w))
+}
+
 fn chat_send(ui: &AppWindow, text: &str) {
     if ui.get_mode() == "chat" && ui.get_page() != "chat" { show_chat(ui); }
     say(ui, "Thinking…");
-    let sid = with(|st| st.chat_sid.clone());
+    let (sid, carry) = with(|st| (st.chat_sid.clone(), st.carry.take()));
     let weak = ui.as_weak();
-    let text = text.to_string();
+    let text = format!("{}{text}", carry.clone().unwrap_or_default());
     std::thread::spawn(move || {
         let r = chat::send(sid.as_deref(), &text);
         let _ = weak.upgrade_in_event_loop(move |ui| {
@@ -1684,7 +1728,10 @@ fn chat_send(ui: &AppWindow, text: &str) {
                     say(&ui, if reply.is_empty() { "(no answer)" } else { &reply });
                     if !reply.is_empty() && with(|st| st.talking && st.s.talkback) { speak(&ui, reply); }
                 }
-                Err(e) => say(&ui, &e),
+                Err(e) => {
+                    with(|st| if st.carry.is_none() { st.carry = carry; }); // not handed over yet: keep it for the retry
+                    if hit_limit(&e) { say(&ui, &format!("{e}\n\nPick another agent with the agent button above, and it carries this chat on.")) } else { say(&ui, &e) }
+                }
             }
         });
     });
@@ -1917,6 +1964,15 @@ fn listen(ui: &AppWindow) {
 
 #[cfg(test)]
 mod zoom_tests {
+    #[test]
+    fn handover_keeps_the_newest_part() {
+        let h = vec![("hi".to_string(), true), ("hello".to_string(), false)];
+        let t = super::handover(&h, "Claude Code");
+        assert!(t.contains("Me: hi") && t.contains("Assistant: hello") && t.contains("Claude Code"));
+        let long = vec![("é".repeat(20_000), true)];
+        assert!(super::handover(&long, "x").len() < 16_500);
+        assert!(super::hit_limit("Free usage limit reached.") && !super::hit_limit("file not found"));
+    }
     #[test]
     fn zoom_steps_like_a_browser() {
         assert_eq!(super::zoom_step(1.0, 1), 1.1);

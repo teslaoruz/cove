@@ -273,7 +273,13 @@ export component AppWindow inherits Window {
     in property <color> agent-tint;
     in property <string> local-model;
     callback set-local-model(string);
-    callback zoom(int);                  // +1 in, -1 out, 0 back to 100 %
+    callback zoom(int);
+    in property <string> chat-agent-label;
+    in property <color> chat-agent-tint;
+    in property <[string]> chat-agent-names;
+    in property <[color]> chat-agent-colors;
+    callback chat-in-terminal();
+    callback chat-switch(int);                  // +1 in, -1 out, 0 back to 100 %
     in property <string> zoom-label: "100%";
     in property <int> agent-index;
     in property <[string]> term-names;
@@ -1187,8 +1193,36 @@ cont(n) => { root.continue-project(n); }
                         height: 32px;
                         alignment: end;
                         spacing: 6px;
+                        cw-btn := Btn { text: chat-agent-label; icon: Icons.chevron; quiet: true; tip: "Continue this chat with another agent"; clicked => { cw-pop.show(); } }
+                        Btn { text: "Open in terminal"; icon: Icons.terminal; quiet: true; tip: "Continue this chat as a full session"; clicked => { root.chat-in-terminal(); } }
                         Btn { text: "New chat"; icon: Icons.plus; quiet: true; clicked => { root.new-chat(); } }
                         Btn { text: "Make it a project"; quiet: true; clicked => { root.make-project(); } }
+                        cw-pop := PopupWindow {
+                            x: cw-btn.x;
+                            y: cw-btn.height + 4px;
+                            width: 210px;
+                            Rectangle {
+                                background: Theme.solid;
+                                border-radius: 12px;
+                                border-width: 1px;
+                                border-color: Theme.hair;
+                                VerticalLayout {
+                                    padding: 5px;
+                                    for name[k] in chat-agent-names: Rectangle {
+                                        height: 32px;
+                                        border-radius: 7px;
+                                        background: cwa.has-hover ? Theme.accent.with-alpha(0.22) : transparent;
+                                        cwa := TouchArea { clicked => { root.chat-switch(k); } }
+                                        HorizontalLayout {
+                                            padding-left: 10px;
+                                            spacing: 9px;
+                                            Rectangle { y: (parent.height - 9px) / 2; width: 9px; height: 9px; border-radius: 4.5px; background: chat-agent-colors[k]; }
+                                            Text { text: name; color: Theme.ink; vertical-alignment: center; }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // The top strip fades in as the desk scrolls away; a frozen title names where you are.

@@ -40,6 +40,7 @@ pub struct Settings {
     pub auto_update: bool,    // install new releases by itself (installed copies only)
     pub local_model: String,  // Ollama model the agent runs on, "" = the agent's own models
     pub sidebar_width: f32,   // logical px
+    pub chat_agent: String,   // agent for Chat; "" = the coding agent when it can chat, else Claude Code
     pub zoom: f32,            // page zoom, 1 = 100 %, like a browser
     pub mail: bool,           // Inbox: ask claude for unread mail and events; off until the user turns it on
 }
@@ -70,6 +71,7 @@ impl Default for Settings {
             auto_update: true,
             mail: false,
             zoom: 1.0,
+            chat_agent: String::new(),
             sidebar_width: 236.0,
             local_model: String::new(),
         }

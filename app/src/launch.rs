@@ -33,6 +33,18 @@ pub const AGENTS: &[(&str, &str)] = &[
     ("goose", "Goose"),
 ];
 
+/// Agents whose conversations Cove can hold itself (Chat, history, hand-over).
+pub const CHAT_AGENTS: &[&str] = &["claude", "codex", "opencode"];
+
+/// The agent Chat talks to: the chosen chat agent, else the coding agent when it can chat, else Claude Code.
+pub fn chat_agent(s: &Settings) -> &str {
+    [s.chat_agent.as_str(), s.agent.as_str()].into_iter().find(|a| CHAT_AGENTS.contains(a)).unwrap_or("claude")
+}
+
+pub fn label(agent: &str) -> &str {
+    AGENTS.iter().find(|a| a.0 == agent).map(|a| a.1).unwrap_or(agent)
+}
+
 /// Each agent's colour, so it reads the same in the picker, the sidebar and the running-agent list.
 pub fn agent_color(agent: &str) -> (u8, u8, u8) {
     match agent {
