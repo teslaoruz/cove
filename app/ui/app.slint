@@ -279,7 +279,12 @@ export component AppWindow inherits Window {
     in property <[string]> chat-agent-names;
     in property <[color]> chat-agent-colors;
     callback chat-in-terminal();
-    callback chat-switch(int);                  // +1 in, -1 out, 0 back to 100 %
+    callback chat-switch(int);
+    in property <int> chat-agent-index;
+    in property <string> os-keys;
+    callback check-updates();
+    callback open-config();
+    callback report-issue();                  // +1 in, -1 out, 0 back to 100 %
     in property <string> zoom-label: "100%";
     in property <int> agent-index;
     in property <[string]> term-names;
@@ -1126,6 +1131,7 @@ cont(n) => { root.continue-project(n); }
                                     Row { Field { text: "Voice"; vertical-alignment: center; } ComboBox { max-width: 320px; enabled: voice-enabled; model: voice-names; current-index: voice-index; selected => { root.set-choice("voice", self.current-index); } } }
                                     Row { Field { text: "Speed"; vertical-alignment: center; } ComboBox { max-width: 320px; model: speed-names; current-index: speed-index; selected => { root.set-choice("speed", self.current-index); } } }
                                     Row { Field { text: ""; } HorizontalLayout { alignment: start; Btn { text: "Test voice"; icon: Icons.play; clicked => { root.test-voice(); } } } }
+                                    Row { Field { text: "Chat agent"; vertical-alignment: center; } ComboBox { max-width: 320px; model: chat-agent-names; current-index: chat-agent-index; selected => { root.chat-switch(self.current-index); } } }
                                     Row { Field { text: "Dictation"; vertical-alignment: center; } Switch { text: "Send what you dictate automatically"; checked: auto-send; toggled => { root.set-flag("auto-send", self.checked); } } }
                                     Row { Field { text: "Chat folder"; vertical-alignment: center; } LineEdit { text: chat-folder; placeholder-text: "~/Chats (press Enter to save)"; accepted(t) => { root.set-chat-dir(t); } } }
                                 }
@@ -1159,6 +1165,41 @@ cont(n) => { root.continue-project(n); }
                                 Text { text: "Notes vault"; color: Theme.ink; font-size: Theme.t-lead; font-weight: 700; }
                                 Text { text: "An Obsidian vault with a note per project (path: in its frontmatter). Descriptions and to-dos come from it."; color: Theme.soft; wrap: word-wrap; }
                                 LineEdit { text: vault; placeholder-text: "No vault (press Enter to save)"; accepted(t) => { root.set-vault(t); } }
+                            }
+                        }
+                        if page == "settings": Panel {
+                            VerticalLayout {
+                                padding: 18px;
+                                spacing: 10px;
+                                Text { text: "Keyboard"; color: Theme.ink; font-size: Theme.t-lead; font-weight: 700; }
+                                for k in [
+                                    { key: "Ctrl + K  or  /", what: "Search or ask" },
+                                    { key: "Ctrl + 1 … 4", what: "Home, Chat, Activity, Projects" },
+                                    { key: "Ctrl + ,", what: "Settings" },
+                                    { key: "Ctrl + =  /  −  /  0", what: "Zoom in, out, back to 100 %" },
+                                    { key: "Ctrl + B", what: "Show or hide the sidebar" },
+                                    { key: "Esc", what: "Clear, close, go back" },
+                                ]: HorizontalLayout {
+                                    spacing: 18px;
+                                    Text { text: k.key; color: Theme.ink; font-family: Theme.mono; font-size: Theme.t-small; min-width: 170px; vertical-alignment: center; }
+                                    Text { text: k.what; color: Theme.soft; vertical-alignment: center; }
+                                }
+                                Text { text: os-keys; color: Theme.faint; font-size: Theme.t-small; wrap: word-wrap; }
+                            }
+                        }
+                        if page == "settings": Panel {
+                            VerticalLayout {
+                                padding: 18px;
+                                spacing: 12px;
+                                Text { text: "About"; color: Theme.ink; font-size: Theme.t-lead; font-weight: 700; }
+                                Text { text: update-note; color: Theme.soft; wrap: word-wrap; }
+                                HorizontalLayout {
+                                    alignment: start;
+                                    spacing: 8px;
+                                    Btn { text: "Check for updates"; clicked => { root.check-updates(); } }
+                                    Btn { text: "Open settings folder"; quiet: true; clicked => { root.open-config(); } }
+                                    Btn { text: "Report a problem"; quiet: true; clicked => { root.report-issue(); } }
+                                }
                             }
                         }
                     }

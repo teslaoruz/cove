@@ -98,6 +98,19 @@ pub fn watch(enabled: impl Fn() -> bool + Send + 'static, done: impl Fn(String) 
     });
 }
 
+/// Check once, now (Settings › About); `done` gets a sentence for the user.
+pub fn check_now(done: impl FnOnce(String) + Send + 'static) {
+    std::thread::spawn(move || {
+        done(match latest_tag() {
+            None => "Could not reach GitHub. Try again later.".into(),
+            Some(t) if !newer(&t, VERSION) => format!("Cove {VERSION} is the newest version."),
+            Some(t) if !managed() => format!("Cove {t} is out. This copy was not installed with the installer: run the install command to update."),
+            Some(t) if install(&t) => format!("Cove {t} is installed. Restart Cove to use it."),
+            Some(t) => format!("Cove {t} is out, but installing it failed. Run the install command again."),
+        })
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

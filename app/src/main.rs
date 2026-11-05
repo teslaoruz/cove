@@ -293,6 +293,7 @@ fn refresh_home(ui: &AppWindow) {
         let chat_list: Vec<&str> = launch::CHAT_AGENTS.iter().copied().filter(|a| *a == ca || launch::which(a).is_some()).collect();
         ui.set_chat_agent_names(model(chat_list.iter().map(|a| ss(launch::label(a))).collect()));
         ui.set_chat_agent_colors(model(chat_list.iter().map(|a| agent_color(a)).collect()));
+        ui.set_chat_agent_index(chat_list.iter().position(|a| *a == ca).unwrap_or(0) as i32);
     });
     refresh_agents(ui);
 }
@@ -490,6 +491,11 @@ fn refresh_settings(ui: &AppWindow) {
     ui.set_auto_send(s.auto_send);
     ui.set_auto_update(s.auto_update);
     ui.set_mail_on(s.mail);
+    ui.set_os_keys(ss(if cfg!(windows) {
+        "Anywhere in Windows: Ctrl+Alt+F9 opens Cove, Ctrl+Alt+F10 starts listening. To change them, open the Cove shortcut in the Start menu folder, then Properties › Shortcut key."
+    } else {
+        "Anywhere on your desktop: bind a key to “cove --listen” in your desktop's keyboard settings (the README shows niri, Hyprland, sway, GNOME and KDE)."
+    }));
     ui.set_update_note(ss(&if update::managed() {
         format!("Version {}. New versions come from GitHub and install in the background.", update::VERSION)
     } else {
@@ -1115,6 +1121,13 @@ fn main() {
         refresh_chats(&ui);
         say(&ui, &if carry.is_some() { format!("{} takes it from here, with this conversation.", launch::label(to)) } else { format!("Chat now uses {}.", launch::label(to)) });
     });
+    cb!(on_check_updates, |ui| {
+        ui.set_update_note(ss("Checking…"));
+        let w = ui.as_weak();
+        update::check_now(move |msg| { let _ = w.upgrade_in_event_loop(move |ui| ui.set_update_note(ss(msg))); });
+    });
+    cb!(on_open_config, |ui| { let s = with(|st| st.s.clone()); report(&ui, launch::files(&s, &settings::config_dir().to_string_lossy()), "the settings folder"); });
+    cb!(on_report_issue, |ui| { let s = with(|st| st.s.clone()); report(&ui, launch::browser(&s, "https://github.com/teslaoruz/cove/issues/new"), "the browser"); });
     cb!(on_side_width, |_ui, w: f32| with(|st| { st.s.sidebar_width = w; save(st); }));
     cb!(on_zoom, |ui, dir: i32| { let z = zoom_step(with(|st| st.s.zoom), dir); set_zoom(&ui, z); });
     {
