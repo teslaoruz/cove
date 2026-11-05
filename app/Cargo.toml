@@ -15,6 +15,7 @@ sysinfo = { version = "0.40", default-features = false, features = ["system", "d
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 cpal = "0.18.2"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
+sherpa-onnx = "2.0.1"
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 window-vibrancy = "0.8"

@@ -143,15 +143,19 @@ pub fn history(id: &str) -> Vec<(String, bool)> {
     out
 }
 
-/// Wait for an agent's answer, at most `secs`; returns its stdout. Stdout is read on its own thread, so a long
-/// answer cannot fill the pipe and stall the agent.
-fn finish(mut ch: std::process::Child, secs: u64) -> Result<Vec<u8>, String> {
-    use std::io::Read;
-    let mut out = ch.stdout.take().ok_or("The agent did not start.")?;
+/// Run an agent with `text` on stdin and hand each line of its answer to `line` as it arrives; at most `secs`.
+fn run(mut c: Command, text: &str, secs: u64, mut line: impl FnMut(&str) + Send + 'static) -> Result<(), String> {
+    use std::io::BufRead;
+    let mut ch = c.current_dir(chat_dir()).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().map_err(|e| e.to_string())?;
+    if let Some(mut i) = ch.stdin.take() {
+        let _ = i.write_all(text.as_bytes()); // dropped here, so the agent sees the end of the message
+    }
+    let out = ch.stdout.take().ok_or("The agent did not start.")?;
+    // read on its own thread, so a long answer cannot fill the pipe and stall the agent
     let reader = std::thread::spawn(move || {
-        let mut b = vec![];
-        let _ = out.read_to_end(&mut b);
-        b
+        for l in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+            line(&l);
+        }
     });
     let end = std::time::Instant::now() + std::time::Duration::from_secs(secs);
     while ch.try_wait().map_err(|e| e.to_string())?.is_none() {
@@ -160,46 +164,98 @@ fn finish(mut ch: std::process::Child, secs: u64) -> Result<Vec<u8>, String> {
             let _ = ch.wait();
             return Err("The agent took too long to answer.".into());
         }
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    Ok(reader.join().unwrap_or_default())
+    let _ = reader.join();
+    Ok(())
 }
 
-fn start(mut c: Command, text: &str) -> Result<Vec<u8>, String> {
-    let mut ch = c.current_dir(chat_dir()).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().map_err(|e| e.to_string())?;
-    if let Some(mut i) = ch.stdin.take() {
-        let _ = i.write_all(text.as_bytes()); // dropped here, so the agent sees the end of the message
-    }
-    finish(ch, 300)
+/// Lines and the reply so far, shared between the reading thread and the caller.
+type Sink = std::sync::Arc<std::sync::Mutex<Vec<String>>>;
+
+fn collect(c: Command, text: &str, on: &Partial) -> Result<Vec<String>, String> {
+    let lines: Sink = Default::default();
+    let (l, on) = (lines.clone(), on.clone());
+    let mut reply = Reply::default();
+    run(c, text, 300, move |line| {
+        l.lock().unwrap().push(line.to_string());
+        if reply.feed(line) {
+            on(&reply.text());
+        }
+    })?;
+    let v = lines.lock().unwrap().clone();
+    Ok(v)
 }
 
-/// Send one message to the selected agent; resumes `sid` when given. Returns (session id, reply).
+/// The reply so far, built from the lines an agent prints (each agent's own event format).
+#[derive(Default)]
+struct Reply {
+    parts: Vec<String>,
+}
+
+impl Reply {
+    /// Take one line; true when the reply grew.
+    fn feed(&mut self, line: &str) -> bool {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { return false };
+        match v["type"].as_str() {
+            // Claude Code: text deltas, a new part at each content block
+            Some("stream_event") if v["event"]["type"] == "content_block_start" => {
+                self.parts.push(String::new());
+                false
+            }
+            Some("stream_event") if v["event"]["delta"]["type"] == "text_delta" => {
+                if self.parts.is_empty() {
+                    self.parts.push(String::new());
+                }
+                self.parts.last_mut().unwrap().push_str(v["event"]["delta"]["text"].as_str().unwrap_or(""));
+                true
+            }
+            Some("text") => v["part"]["text"].as_str().map(|t| self.parts.push(t.to_string())).is_some(),
+            Some("item.completed") if v["item"]["type"] == "agent_message" => v["item"]["text"].as_str().map(|t| self.parts.push(t.to_string())).is_some(),
+            _ => false,
+        }
+    }
+
+    fn text(&self) -> String {
+        self.parts.iter().map(|p| p.trim()).filter(|p| !p.is_empty()).collect::<Vec<_>>().join("\n\n")
+    }
+}
+
+/// Called with the whole reply so far, each time it grows.
+pub type Partial = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
+/// Send one message to the chat agent; resumes `sid` when given. `on` sees the reply as it is written.
+/// Returns (session id, reply).
 // The chat reads outside text (web pages, mail), so no agent may run commands or edit files from it.
-pub fn send(sid: Option<&str>, text: &str) -> Result<(String, String), String> {
+pub fn send(sid: Option<&str>, text: &str, on: Partial) -> Result<(String, String), String> {
     fs::create_dir_all(chat_dir()).map_err(|e| e.to_string())?;
     match agent().as_str() {
-        "opencode" => send_opencode(sid, text),
-        "codex" => send_codex(sid, text),
-        "claude" => send_claude(sid, text),
+        "opencode" => send_opencode(sid, text, &on),
+        "codex" => send_codex(sid, text, &on),
+        "claude" => send_claude(sid, text, &on),
         _ => Err("Chat works with Claude Code, Codex and opencode. Pick one at the bottom of the sidebar.".into()),
     }
 }
 
-fn send_claude(sid: Option<&str>, text: &str) -> Result<(String, String), String> {
+fn send_claude(sid: Option<&str>, text: &str, on: &Partial) -> Result<(String, String), String> {
     let claude = crate::launch::which("claude").ok_or("The chat needs Claude Code (claude) on PATH.")?;
     let mut c = Command::new(claude);
     crate::launch::subscription_only(&mut c);
     if let Some((args, env)) = local() {
         c.args(args).envs(env); // a local model: Ollama stands in for Anthropic's API
     }
-    // web tools only, and nothing that would ask
-    c.args(["-p", "--output-format", "json", "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch", "--permission-mode", "dontAsk"]);
+    // web tools only, and nothing that would ask; stream-json shows the reply as it is written
+    c.args(["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch", "--permission-mode", "dontAsk"]);
     if let Some(s) = sid {
         c.args(["--resume", s]);
     }
-    let out = start(c, text)?;
-    let v: serde_json::Value = serde_json::from_slice(&out).map_err(|_| "Claude Code did not answer. Is it signed in?".to_string())?;
+    let lines = collect(c, text, on)?;
+    let result = lines.iter().rev().find_map(|l| serde_json::from_str::<serde_json::Value>(l).ok().filter(|v| v["type"] == "result"));
+    let v = result.ok_or_else(|| "Claude Code did not answer. Is it signed in?".to_string())?;
     let sid = v["session_id"].as_str().ok_or("Claude Code did not answer.")?.to_string();
+    if v["is_error"] == true {
+        return Err(v["result"].as_str().unwrap_or("Claude Code could not answer.").to_string());
+    }
     Ok((sid, v["result"].as_str().unwrap_or("").trim().to_string()))
 }
 
@@ -207,7 +263,7 @@ fn send_claude(sid: Option<&str>, text: &str) -> Result<(String, String), String
 // shortcut: these rules were accepted by opencode 2.2 but not yet seen blocking a tool; check before relying on them.
 const OPENCODE_CHAT_CONFIG: &str = r#"{"permission":{"*":"deny","bash":"deny","shell":"deny","edit":"deny","webfetch":"allow","websearch":"allow"}}"#;
 
-fn send_opencode(sid: Option<&str>, text: &str) -> Result<(String, String), String> {
+fn send_opencode(sid: Option<&str>, text: &str, on: &Partial) -> Result<(String, String), String> {
     let bin = crate::launch::which("opencode").ok_or("The chat needs opencode on PATH.")?;
     let mut c = Command::new(bin);
     // --standalone: a private server, so these permission rules apply instead of the background service's own
@@ -222,7 +278,7 @@ fn send_opencode(sid: Option<&str>, text: &str) -> Result<(String, String), Stri
     if let Some(s) = sid {
         c.args(["--session", s]);
     }
-    parse_opencode(&start(c, text)?)
+    parse_opencode(collect(c, text, on)?.join("\n").as_bytes())
 }
 
 /// opencode prints one JSON event per line: text parts carry the reply, every event carries the session id.
@@ -247,7 +303,7 @@ fn parse_opencode(out: &[u8]) -> Result<(String, String), String> {
     }
 }
 
-fn send_codex(sid: Option<&str>, text: &str) -> Result<(String, String), String> {
+fn send_codex(sid: Option<&str>, text: &str, on: &Partial) -> Result<(String, String), String> {
     let bin = crate::launch::which("codex").ok_or("The chat needs Codex (codex) on PATH.")?;
     let mut c = Command::new(bin);
     // read-only sandbox; ~/Chats is not a git repository
@@ -260,9 +316,9 @@ fn send_codex(sid: Option<&str>, text: &str) -> Result<(String, String), String>
         c.args(["resume", s]);
     }
     c.arg("-"); // the message comes on stdin
-    let out = start(c, text)?;
+    let out = collect(c, text, on)?.join("\n");
     let (mut sid, mut parts, mut err) = (sid.map(str::to_string), vec![], None);
-    for line in String::from_utf8_lossy(&out).lines() {
+    for line in out.lines() {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
         match v["type"].as_str() {
             Some("thread.started") => sid = v["thread_id"].as_str().map(str::to_string).or(sid),
@@ -296,6 +352,16 @@ pub fn move_session(sid: &str, to: &str) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reply_follows_claude_deltas() {
+        let mut r = super::Reply::default();
+        assert!(!r.feed(r#"{"type":"system"}"#));
+        assert!(!r.feed(r#"{"type":"stream_event","event":{"type":"content_block_start"}}"#));
+        assert!(r.feed(r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"one "}}}"#));
+        assert!(r.feed(r#"{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"two"}}}"#));
+        assert_eq!(r.text(), "one two");
+        assert!(!r.feed(r#"{"type":"assistant"}"#), "only lines that add text report");
+    }
     #[test]
     fn reads_opencode_events() {
         let out = br#"{"type":"step_start","sessionID":"ses_1","part":{}}

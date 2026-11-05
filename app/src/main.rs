@@ -75,6 +75,8 @@ struct State {
     voice_msg: bool, // the next submit comes from speech
     talking: bool, // the last message was spoken, so its reply is read aloud
     chats_all: bool,
+    streaming: bool,  // the last message is a reply still being written
+    voice_wait: bool, // a reply is about to be spoken: the voice is loading or the first piece is being made
     carry: Option<String>, // a conversation handed over from another agent, sent with the next message // the sidebar lists every chat, not just the latest
     sys: Option<(f32, u64, u64)>, // CPU %, memory used, memory total
 }
@@ -532,11 +534,11 @@ fn voice_note(kokoro: bool) -> String {
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
         .and_then(|v| v["settings"]["selected_model"].as_str().map(str::to_string));
     let input = match (launch::which("handy").is_some(), model) {
-        _ if asr::installed().is_some() => "Voice: press the Copilot key with Cove in front to talk; words appear as you speak, each pause sends, replies are read aloud, and it keeps listening until you press the key again. When Cove is not in front, the key only brings it up. Speech to text: Parakeet in ~/.local/share/asr.".to_string(),
+        _ if asr::installed().is_some() => "Voice: press the Copilot key with Cove in front to talk; words appear as you speak, each pause sends, replies are read aloud, and it keeps listening until you press the key again. When Cove is not in front, the key only brings it up. It is ready a moment after Cove starts. Speech to text: Parakeet in ~/.local/share/asr.".to_string(),
         (false, _) => "Voice input needs Handy (handy.computer).".to_string(),
         (true, m) => format!("Voice input: Handy{}. Press the Copilot key to talk; press it again to stop. It brings Cove to the front.", m.map(|m| format!(" with {m}")).unwrap_or_default()),
     };
-    let output = if kokoro { " Kokoro lives in ~/.local/share/kokoro." } else { " For a natural voice, put sherpa-onnx and a Kokoro model in ~/.local/share/kokoro." };
+    let output = if kokoro { " Kokoro lives in ~/.local/share/kokoro." } else { " For a natural voice, put a Kokoro model in ~/.local/share/kokoro (see the README)." };
     format!("{input}{output} Changing the chat folder starts a fresh chat list; older chats stay in the old folder.")
 }
 
@@ -990,7 +992,7 @@ fn main() {
         s: settings, projects: vec![], colls: vec![], vault_idx: vec![], notes: HashMap::new(), art: serde_json::Value::Null,
         images: HashMap::new(), recent: vec![], days: HashMap::new(), agents: vec![], status: None, slots: vec![], cur: None,
         cur_actions: vec![], last_page: "home".into(), msgs: vec![], notice: None, choices: HashMap::new(),
-        sys_dark: platform::system_dark().unwrap_or(true), roots: roots.clone(), act_started: false, prompts: HashMap::new(), chat_sid: None, brief, desk: None, tween: slint::Timer::default(), mic: None, sys: None, speech: None, clips: Default::default(), voice_until: None, stopped: None, submit_timer: slint::Timer::default(), key: None, live: None, live_sent: 0, live_base: String::new(), voice_msg: false, talking: false, chats_all: false, carry: None,
+        sys_dark: platform::system_dark().unwrap_or(true), roots: roots.clone(), act_started: false, prompts: HashMap::new(), chat_sid: None, brief, desk: None, tween: slint::Timer::default(), mic: None, sys: None, speech: None, clips: Default::default(), voice_until: None, stopped: None, submit_timer: slint::Timer::default(), key: None, live: None, live_sent: 0, live_base: String::new(), voice_msg: false, talking: false, chats_all: false, carry: None, voice_wait: false, streaming: false,
     }));
     apply_theme(&ui);
     ui.global::<Theme>().set_mono(ss(&platform::mono_font()));
@@ -1180,7 +1182,14 @@ fn main() {
             let on = !ui.get_listening();
             if on {
                 let base = ui.get_query().to_string();
-                with(|st| { hush(st); st.live = asr::Live::start(); st.live_sent = 0; st.live_base = base; st.mic = st.live.as_ref().and_then(|_| mic::Mic::open()); });
+                with(|st| {
+                    hush(st);
+                    st.live = asr::Live::start();
+                    st.live_sent = 0;
+                    st.live_base = base;
+                    st.mic = st.live.as_ref().and_then(|_| mic::Mic::open());
+                    if st.s.talkback { speech::preload_voice(&voice(st)); } // the reply will be read aloud: get the voice ready while they speak
+                });
                 ui.set_listening(with(|st| st.live.is_some()));
                 ui.invoke_focus_input();
             } else {
@@ -1343,7 +1352,9 @@ fn main() {
         let listening = ui.get_listening();
         let (voice, speaking) = with(|st| {
             if st.speech.as_mut().is_some_and(|s| s.done()) { st.speech = None; }
-            if st.speech.is_none() { if let Some(c) = st.clips.pop_front() { st.speech = speech::play(c); } }
+            if st.speech.is_none() { if let Some(c) = st.clips.pop_front() { st.speech = speech::play(c); st.voice_wait = false; } }
+            if ui.get_voice_wait() != st.voice_wait { ui.set_voice_wait(st.voice_wait); }
+            if ui.get_ears_loading() != asr::loading() { ui.set_ears_loading(asr::loading()); }
             let talk = st.speech.as_ref().map(|s| s.level());
             (st.mic.as_ref().map(|m| m.level()).unwrap_or(0.0).max(talk.unwrap_or(0.0)), talk.is_some())
         });
@@ -1391,6 +1402,13 @@ fn main() {
         }
     }
 
+    // talk mode is ready the moment it is wanted: load the recognizer now, and let both models go when unused
+    if asr::installed().is_some() { asr::preload(); }
+    let idle = slint::Timer::default();
+    idle.start(slint::TimerMode::Repeated, Duration::from_secs(30), || {
+        asr::unload_if_idle(Duration::from_secs(180));
+        speech::unload_voice_if_idle(Duration::from_secs(300));
+    });
     {
         // the window exists once the event loop runs: apply the saved zoom then
         let w = ui.as_weak();
@@ -1701,7 +1719,11 @@ fn fetch_mail(ui: &AppWindow) {
 
 /// Drop a trailing "Thinking…" placeholder.
 fn unthink(ui: &AppWindow) {
-    with(|st| if st.msgs.last().is_some_and(|m| !m.1 && m.0 == "Thinking…") { st.msgs.pop(); });
+    with(|st| {
+        // the placeholder, or the reply as it was streamed (the final text replaces it)
+        if st.msgs.last().is_some_and(|m| !m.1 && (m.0 == "Thinking…" || st.streaming)) { st.msgs.pop(); }
+        st.streaming = false;
+    });
     show_msgs(ui);
 }
 
@@ -1729,7 +1751,16 @@ fn chat_send(ui: &AppWindow, text: &str) {
     let weak = ui.as_weak();
     let text = format!("{}{text}", carry.clone().unwrap_or_default());
     std::thread::spawn(move || {
-        let r = chat::send(sid.as_deref(), &text);
+        // the reply shows as it is written: the "Thinking…" line turns into the text so far
+        let w = weak.clone();
+        let on: chat::Partial = std::sync::Arc::new(move |t: &str| {
+            let t = t.to_string();
+            let _ = w.upgrade_in_event_loop(move |ui| {
+                with(|st| if let Some(m) = st.msgs.last_mut().filter(|m| !m.1) { m.0 = t; st.streaming = true; });
+                show_msgs(&ui);
+            });
+        });
+        let r = chat::send(sid.as_deref(), &text, on);
         let _ = weak.upgrade_in_event_loop(move |ui| {
             unthink(&ui);
             match r {
@@ -1800,6 +1831,7 @@ fn scroll_to(ui: &AppWindow, y: f32) {
 
 /// Stop speaking, and drop what was still being synthesised.
 fn hush(st: &mut State) {
+    st.voice_wait = false;
     st.speech = None;
     st.clips.clear();
     speech::hush();
@@ -1807,13 +1839,16 @@ fn hush(st: &mut State) {
 
 /// Say `text` aloud (synthesis off the UI thread, piece by piece; the frame loop plays them in turn).
 fn speak(ui: &AppWindow, text: String) {
-    let v = with(|st| { hush(st); voice(st) });
+    let v = with(|st| { hush(st); st.voice_wait = true; voice(st) });
     let generation = speech::generation();
     let weak = ui.as_weak();
     std::thread::spawn(move || {
+        let w = weak.clone();
         speech::render(&text, &v, generation, |clip| {
-            let _ = weak.upgrade_in_event_loop(move |_| with(|st| if clip.generation == speech::generation() { st.clips.push_back(clip) }));
+            let _ = w.upgrade_in_event_loop(move |_| with(|st| if clip.generation == speech::generation() { st.clips.push_back(clip) }));
         });
+        // nothing to play (no voice installed, or it failed): stop showing that it is coming
+        let _ = weak.upgrade_in_event_loop(move |_| with(|st| if st.clips.is_empty() && st.speech.is_none() { st.voice_wait = false }));
     });
 }
 

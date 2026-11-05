@@ -1,11 +1,12 @@
-//! Talking back: text to a WAV with the best voice on this machine (Kokoro via sherpa-onnx, else Piper, else
+//! Talking back: text to a WAV with the best voice on this machine (Kokoro, loaded inside Cove with sherpa-onnx, else Piper, else
 //! espeak-ng; `say` on macOS, the system voice on Windows), played by the system player. The loudness envelope of the
 //! same WAV drives the orb while it speaks.
 use crate::settings::cache_dir;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// One synthesised piece of a reply, waiting to be played. Its WAV is deleted when it is dropped.
 pub struct Clip {
@@ -107,18 +108,14 @@ const KOKORO_SIDS: &[&str] = &[
     "bf_alice", "bf_emma", "bf_isabella", "bf_lily", "bm_daniel", "bm_fable", "bm_george", "bm_lewis",
 ];
 
-/// sherpa-onnx's TTS binary and a Kokoro model (folder, .onnx file) from ~/.local/share/kokoro. The fp32
-/// model.onnx is preferred: on x86 CPUs it runs faster than model.int8.onnx.
-pub fn kokoro() -> Option<(PathBuf, PathBuf, PathBuf)> {
+/// A Kokoro model (folder, .onnx file) in ~/.local/share/kokoro. The fp32 model.onnx is preferred: on x86 CPUs it
+/// runs faster than model.int8.onnx.
+pub fn kokoro() -> Option<(PathBuf, PathBuf)> {
     let dir = dirs::data_dir()?.join("kokoro");
-    let mut bin = None;
     let mut model: Option<(PathBuf, PathBuf)> = None;
     for e in std::fs::read_dir(&dir).ok()?.flatten() {
         let p = e.path();
-        let name = e.file_name().to_string_lossy().into_owned();
-        if name.starts_with("sherpa-onnx-") && p.join("bin/sherpa-onnx-offline-tts").is_file() {
-            bin = Some(p.join("bin/sherpa-onnx-offline-tts"));
-        } else if name.starts_with("kokoro-") && p.join("voices.bin").is_file() {
+        if e.file_name().to_string_lossy().starts_with("kokoro-") && p.join("voices.bin").is_file() {
             if p.join("model.onnx").is_file() {
                 model = Some((p.clone(), p.join("model.onnx")));
             } else if p.join("model.int8.onnx").is_file() && model.is_none() {
@@ -126,24 +123,66 @@ pub fn kokoro() -> Option<(PathBuf, PathBuf, PathBuf)> {
             }
         }
     }
-    let (m, f) = model?;
-    Some((bin?, m, f))
+    model
+}
+
+/// The Kokoro voice, kept loaded (about 350 MB) so a reply starts speaking at once; keyed by its lexicon (US or UK
+/// English), which the chosen voice decides.
+static KOKORO: Mutex<Option<(bool, Arc<sherpa_onnx::OfflineTts>)>> = Mutex::new(None);
+static KOKORO_LOADING: AtomicBool = AtomicBool::new(false);
+static KOKORO_USED: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn kokoro_tts(uk: bool) -> Option<Arc<sherpa_onnx::OfflineTts>> {
+    *KOKORO_USED.lock().unwrap() = Some(Instant::now());
+    if let Some((k, t)) = KOKORO.lock().unwrap().as_ref() {
+        if *k == uk {
+            return Some(t.clone());
+        }
+    }
+    let (m, model) = kokoro()?;
+    KOKORO_LOADING.store(true, Ordering::SeqCst);
+    let path = |f: &str| Some(m.join(f).to_string_lossy().into_owned());
+    let mut c = sherpa_onnx::OfflineTtsConfig::default();
+    c.model.kokoro = sherpa_onnx::OfflineTtsKokoroModelConfig {
+        model: Some(model.to_string_lossy().into_owned()),
+        voices: path("voices.bin"),
+        tokens: path("tokens.txt"),
+        lexicon: path(if uk { "lexicon-gb-en.txt" } else { "lexicon-us-en.txt" }),
+        length_scale: 1.0,
+        ..Default::default()
+    };
+    c.model.num_threads = 8; // fp32 on 8 threads speaks ~3x faster than real time here
+    let t = sherpa_onnx::OfflineTts::create(&c).map(Arc::new);
+    if let Some(t) = &t {
+        *KOKORO.lock().unwrap() = Some((uk, t.clone()));
+    }
+    KOKORO_LOADING.store(false, Ordering::SeqCst);
+    t
+}
+
+/// Load the voice in the background, ahead of a reply (talk mode, Talk back).
+pub fn preload_voice(v: &Voice) {
+    let uk = v.voice.starts_with('b');
+    if (v.engine == "auto" || v.engine == "kokoro") && !KOKORO_LOADING.load(Ordering::SeqCst) && KOKORO.lock().unwrap().as_ref().is_none_or(|(k, _)| *k != uk) {
+        std::thread::spawn(move || { kokoro_tts(uk); });
+    }
+}
+
+/// Let the voice go after `idle` unused.
+pub fn unload_voice_if_idle(idle: Duration) {
+    if KOKORO_USED.lock().unwrap().is_some_and(|t| t.elapsed() > idle) {
+        *KOKORO.lock().unwrap() = None;
+    }
 }
 
 fn kokoro_synth(text: &str, wav: &str, v: &Voice) -> bool {
-    let Some((bin, m, model)) = kokoro() else { return false };
-    let sid = KOKORO_SIDS.iter().position(|x| *x == v.voice).unwrap_or(3);
-    let lex = m.join(if v.voice.starts_with('b') { "lexicon-gb-en.txt" } else { "lexicon-us-en.txt" });
-    let mut c = Command::new(bin);
-    c.arg(format!("--kokoro-model={}", model.to_string_lossy()))
-        .arg(format!("--kokoro-voices={}", m.join("voices.bin").to_string_lossy()))
-        .arg(format!("--kokoro-tokens={}", m.join("tokens.txt").to_string_lossy()))
-        .arg(format!("--kokoro-lexicon={}", lex.to_string_lossy()))
-        .arg(format!("--kokoro-length-scale={}", 1.0 / v.speed.clamp(0.5, 2.0)))
-        .arg("--num-threads=8") // fp32 on 8 threads speaks ~4x faster than real time here; more threads were slower
-        .arg(format!("--sid={sid}"))
-        .arg(format!("--output-filename={wav}"));
-    c.arg(text).stdout(Stdio::null()).stderr(Stdio::null()).status().is_ok_and(|s| s.success())
+    let Some(tts) = kokoro_tts(v.voice.starts_with('b')) else { return false };
+    let sid = KOKORO_SIDS.iter().position(|x| *x == v.voice).unwrap_or(3) as i32;
+    let g = sherpa_onnx::GenerationConfig { sid, speed: v.speed.clamp(0.5, 2.0), ..Default::default() };
+    match tts.generate_with_config(text, &g, None::<fn(&[f32], f32) -> bool>) {
+        Some(a) => sherpa_onnx::write(wav, a.samples(), a.sample_rate()),
+        None => false,
+    }
 }
 
 pub fn piper_voice() -> Option<PathBuf> {
