@@ -1,3 +1,0 @@
-# sherpa-onnx's Windows libraries are built with the static C runtime (/MT); Rust must link the same one.
-[target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static"]

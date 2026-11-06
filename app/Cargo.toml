@@ -15,7 +15,13 @@ sysinfo = { version = "0.40", default-features = false, features = ["system", "d
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 cpal = "0.18.2"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
+
+# speech in-process: one static binary on Linux; on Windows sherpa-onnx ships its C API only as DLLs, which go beside cove.exe
+[target.'cfg(not(windows))'.dependencies]
 sherpa-onnx = "2.0.1"
+
+[target.'cfg(windows)'.dependencies]
+sherpa-onnx = { version = "2.0.1", default-features = false, features = ["shared"] }
 
 [target.'cfg(any(windows, target_os = "macos"))'.dependencies]
 window-vibrancy = "0.8"

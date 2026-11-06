@@ -74,10 +74,13 @@ fn install(tag: &str) -> bool {
     ok
 }
 
-/// On Windows the installer moves the running exe aside to replace it; remove that leftover.
+/// On Windows the installer moves files in use (the exe, its DLLs) aside as *.old to replace them; remove those.
 pub fn clean_up() {
-    if let Ok(me) = std::env::current_exe() {
-        let _ = std::fs::remove_file(me.with_extension("exe.old"));
+    let Some(dir) = std::env::current_exe().ok().and_then(|me| me.parent().map(|d| d.to_path_buf())) else { return };
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        if e.path().extension().is_some_and(|x| x == "old") {
+            let _ = std::fs::remove_file(e.path());
+        }
     }
 }
 

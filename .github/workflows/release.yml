@@ -61,7 +61,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force pkg/cove | Out-Null
-          Copy-Item target/release/cove.exe, ../LICENSE pkg/cove/
+          Copy-Item target/release/cove.exe, target/release/*.dll, ../LICENSE pkg/cove/
           Compress-Archive -Path pkg/cove -DestinationPath ${{ matrix.asset }}
 
       # the installer gives its Start menu shortcuts these keys; check Windows accepts them before any release

@@ -28,12 +28,16 @@
 
         Expand-Archive "$tmp\$asset" -DestinationPath "$tmp\x" -Force
         New-Item -ItemType Directory -Force $dir | Out-Null
-        # a running exe cannot be overwritten, but it can be renamed; Cove deletes the .old copy on its next start
-        if (Test-Path $exe) {
-            Remove-Item "$exe.old" -Force -ErrorAction SilentlyContinue
-            Move-Item $exe "$exe.old"
+        # files in use (cove.exe and its DLLs while Cove runs) cannot be overwritten, but they can be renamed;
+        # Cove deletes the .old copies on its next start
+        foreach ($f in Get-ChildItem "$tmp\x\cove" -File) {
+            $dest = Join-Path $dir $f.Name
+            if (Test-Path $dest) {
+                Remove-Item "$dest.old" -Force -ErrorAction SilentlyContinue
+                Move-Item $dest "$dest.old"
+            }
+            Copy-Item $f.FullName $dest
         }
-        Copy-Item "$tmp\x\cove\*" $dir -Recurse -Force
 
         # Start menu entries. Their shortcut keys work anywhere in Windows; a key the user changed is kept on update.
         # F-keys, because AltGr is Ctrl+Alt: Ctrl+Alt+<letter> would swallow letters such as ł or ć on some layouts.
