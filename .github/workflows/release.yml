@@ -62,6 +62,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force pkg/cove | Out-Null
           Copy-Item target/release/cove.exe, target/release/*.dll, ../LICENSE pkg/cove/
+          # start the packaged exe once: a missing DLL makes Windows refuse to load it
+          $p = Start-Process pkg/cove/cove.exe -ArgumentList '--list' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "packaged cove.exe did not start (exit $($p.ExitCode))" }
           Compress-Archive -Path pkg/cove -DestinationPath ${{ matrix.asset }}
 
       # the installer gives its Start menu shortcuts these keys; check Windows accepts them before any release
