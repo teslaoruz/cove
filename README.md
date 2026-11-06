@@ -162,7 +162,7 @@ Cove needs only one thing besides itself: a coding agent. Everything else is an 
 | **Code editor** | The *VS Code* button opens projects in your editor | ✓ | ✓ | [Editor](#code-editor) |
 | **Handy** | Dictation: speak, and the words appear in Cove's box | ✓ | ✓ | [Voice input](#voice-input-handy) |
 | **A voice** | Cove reads its chat replies aloud | ✓ (Kokoro, Piper or espeak-ng) | ✓ built in | [Spoken replies](#spoken-replies) |
-| **Talk mode models** | A hands-free conversation: words show as you speak, and every pause sends | ✓ | — | [Talk mode](#talk-mode-live-speech-to-text) |
+| **Talk mode models** | A hands-free conversation: words show as you speak, and every pause sends | ✓ | ✓ (new) | [Talk mode](#talk-mode-live-speech-to-text) |
 | **Keyboard shortcut** | One key that brings Cove up and starts listening | ✓ | ✓ set up by the installer | [Shortcuts](#keyboard-shortcuts) |
 | **More agents** | Gemini CLI, Copilot CLI, Cursor CLI, Qwen Code, Aider, Goose | ✓ | ✓ | [Agents](#coding-agents) |
 | **Ollama** | Run your agent on a local model, offline and free | ✓ | ✓ | [Local models](#local-models-ollama) |
@@ -235,26 +235,25 @@ To send dictated text without pressing Enter, switch on **Settings → Voice and
 
 ### Spoken replies
 
-In **Chat** mode, Cove can read its replies aloud. Turn this on with **Settings → Voice and chat → Talk back**, and choose a voice there.
+Cove can read its chat replies aloud. Turn this on with **Settings → Voice and chat → Talk back**, and choose a voice there. Every reply also has a **Read aloud** button above it.
 
 - **Windows:** this works out of the box with the built-in Windows voice.
 - **Linux:** Cove uses the best voice it finds, in this order.
 
 | Voice | Sound | How to install (Linux) |
 | --- | --- | --- |
-| **Kokoro** | Natural, 28 voices | Run the commands below. About 360 MB to download. |
+| **Kokoro** | Natural, 28 voices | Run the command below. About 330 MB to download. |
 | **Piper** | Good | Install `piper-tts` (`pipx install piper-tts`, or `piper-tts-bin` from the AUR). Put one voice (`.onnx` plus `.onnx.json`) from [piper-voices](https://huggingface.co/rhasspy/piper-voices/tree/main/en) into `~/.local/share/piper/`. |
 | **espeak-ng** | Robotic, tiny | `sudo apt install espeak-ng`, `sudo dnf install espeak-ng` or `sudo pacman -S espeak-ng` |
 
-To install Kokoro, run:
+To install Kokoro, download the voice model. Cove has the engine built in:
 
 ```sh
 mkdir -p ~/.local/share/kokoro && cd ~/.local/share/kokoro
-curl -fL https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-linux-x64-shared.tar.bz2 | tar xj
 curl -fL https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-multi-lang-v1_0.tar.bz2 | tar xj
 ```
 
-Then go to **Settings → Voice and chat** and click **Test voice**.
+Then go to **Settings → Voice and chat** and click **Test voice**. Cove loads the voice only when it is about to speak, and lets it go after five quiet minutes. While it gets ready, three dots move on the microphone button.
 
 Playback uses `pw-play`, `paplay` or `aplay`, and every desktop has at least one of them.
 
@@ -265,20 +264,31 @@ Talk mode is a spoken conversation, and it needs no extra app:
 - Each pause sends what you said.
 - Cove reads the reply aloud, then keeps listening until you stop it.
 
-It runs on your computer with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), the Parakeet speech model and the Silero voice detector. Nothing is recorded or uploaded. **Linux only for now.**
+It runs inside Cove with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), the Parakeet speech model and the Silero voice detector. Nothing is recorded or uploaded, and the microphone is open only while you talk.
 
-1. Install **Kokoro** first (see [Spoken replies](#spoken-replies)), because talk mode uses the same sherpa-onnx tools.
-2. Download the listening models, about 465 MB:
+1. Download the listening models, about 465 MB:
 
-```sh
-mkdir -p ~/.local/share/asr && cd ~/.local/share/asr
-curl -fL https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2 | tar xj
-curl -fLO https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
-```
+   **Linux**
 
-3. Restart Cove. The microphone now starts talk mode instead of Handy. It takes a few seconds to get ready each time.
+   ```sh
+   mkdir -p ~/.local/share/asr && cd ~/.local/share/asr
+   curl -fL https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2 | tar xj
+   curl -fLO https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+   ```
 
-To check that Cove hears your microphone, run `cove --mic-test` in a terminal and speak. The numbers rise while you talk.
+   **Windows** (PowerShell, Windows 10 and 11 include `tar`)
+
+   ```powershell
+   $d = "$env:APPDATA\asr"; New-Item -ItemType Directory -Force $d | Out-Null; cd $d
+   curl.exe -fL -o m.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2; tar xf m.tar.bz2; del m.tar.bz2
+   curl.exe -fLO https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx
+   ```
+
+2. Restart Cove. The microphone now starts talk mode instead of Handy.
+
+Cove loads the speech model in the background when it starts, so it is ready when you are. If you don't talk for a few minutes, Cove lets it go to free about 1 GB of memory, and loads it again the next time you press the microphone. While it loads, the box glows softly and three dots move on the microphone button. When it turns red, speak.
+
+To check talk mode from a terminal, run `cove --talk-test` and say something: it prints what it hears for 20 seconds. `cove --mic-test` shows only the microphone level.
 
 ### Keyboard shortcuts
 
@@ -287,9 +297,12 @@ Inside Cove:
 | Key | Action |
 | --- | --- |
 | <kbd>Ctrl</kbd>+<kbd>K</kbd> or <kbd>/</kbd> | Search or ask |
+| <kbd>Ctrl</kbd>+<kbd>1</kbd> … <kbd>4</kbd> | Home, Chat, Activity, Projects |
+| <kbd>Ctrl</kbd>+<kbd>,</kbd> | Settings |
+| <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>-</kbd> / <kbd>0</kbd>, or <kbd>Ctrl</kbd>+wheel | Zoom in, out, back to 100 % |
 | <kbd>Enter</kbd> | Send, or open the selected project |
 | <kbd>↑</kbd> / <kbd>↓</kbd> | Pick a suggestion |
-| <kbd>Ctrl</kbd>+<kbd>B</kbd> | Show or hide the sidebar |
+| <kbd>Ctrl</kbd>+<kbd>B</kbd> | Show or hide the sidebar (drag its edge to resize it) |
 | <kbd>Esc</kbd> | Clear, close, go back |
 
 **A global shortcut (Linux).** Bind any key to `cove --listen`:
@@ -354,11 +367,12 @@ On the **niri**, **Hyprland** and **sway** compositors, clicking a running agent
 - **Your agent, your data.** Switch between Claude Code, Codex, opencode, Gemini CLI, Copilot CLI, Cursor CLI, Qwen Code, Aider and Goose at the bottom of the sidebar. Each has its own colour, and local models through Ollama work too. Session counts, recent sessions, Activity, running agents and Chat all follow the agent you pick.
 - **Live agents.** See which agents are running right now, in which project, and whether they are working or waiting for you.
 - **Ask in plain words.** Type requests such as *"continue nebula-api"*, *"run quill"* or *"new project called atlas"*. Cove opens the right place, with your request already typed.
-- **Chat.** Talk to Claude Code without picking a project first. When an idea grows, turn the chat into a project with one click.
+- **Code and Chat.** The box on Home is for your projects: open or continue one, ask how one is going, or start a new one. **Chat** (<kbd>Ctrl</kbd>+<kbd>2</kbd>) is for longer conversations that aren't about a project, like a chatbot. Replies appear as they are written, with the agent, model and time above each one.
+- **Chat with any agent.** Pick the chat agent in Settings or with the button above the chat. When an agent hits its limit, hand the conversation to another one and carry on. **Open in terminal** continues a chat as a full agent session, and **Make it a project** turns it into a project.
 - **Activity.** A heatmap, a punch card and charts of your prompts and tokens over time, plus your busiest projects.
 - **Quick jumps.** Open any project in your editor, terminal, file manager or on GitHub, or copy its path.
 - **Native and light.** One binary written in Rust, with no runtime to install. It opens in under a second and stays quiet in the background.
-- **Fits your desktop.** It follows the system light or dark theme and accent colour, and works from the keyboard: <kbd>Ctrl</kbd>+<kbd>K</kbd> to search, <kbd>Ctrl</kbd>+<kbd>B</kbd> for the sidebar, <kbd>Esc</kbd> to go back.
+- **Fits your desktop.** It follows the system light or dark theme and accent colour, zooms like a browser, and works from the keyboard (see [Keyboard shortcuts](#keyboard-shortcuts)).
 
 ## Updates
 
@@ -433,6 +447,15 @@ Cove lists the folders directly inside each project folder. Check **Settings →
 </details>
 
 <details>
+<summary><b>Does it work with the Claude, Codex or opencode desktop apps?</b></summary>
+
+<br>
+
+Partly. Cove reads each agent's history from where the agent keeps it: `~/.claude/projects`, `~/.codex` and opencode's `opencode.db`. Sessions stored there appear in Cove, so a desktop app that keeps its history in the same place shows up too. But Cove's buttons open the command-line agents in a terminal, not the desktop apps, so install the command-line version too (see [Coding agents](#coding-agents)).
+
+</details>
+
+<details>
 <summary><b>Does it work on macOS?</b></summary>
 
 <br>
@@ -444,7 +467,8 @@ Not yet. The code has macOS paths in place, but there is no tested build. Contri
 ## Known limits
 
 - **Jump to an agent's window** works on niri, Hyprland and sway. Elsewhere, Cove shows running agents but can't bring their window to the front.
-- **Talk mode is Linux-only** for now. On Windows, use Handy for dictation. Spoken replies use the Windows voice.
+- **Talk mode on Windows is new and untested.** Spoken replies on Windows use the built-in Windows voice, not Kokoro.
+- **Linux touchpad pinch** doesn't zoom (the window toolkit doesn't report it); use <kbd>Ctrl</kbd>+wheel or <kbd>Ctrl</kbd>+<kbd>=</kbd>.
 - **Glass** (see-through window) uses Mica on Windows. On Linux, it needs a compositor that blurs, such as KDE Plasma, Hyprland or niri.
 - **Chat extras are for Claude Code.** Renaming a chat and turning a chat into a project work with Claude Code. With opencode you can also delete chats. Chat needs Claude Code, Codex or opencode.
 - **Not yet tried on a real machine:**
