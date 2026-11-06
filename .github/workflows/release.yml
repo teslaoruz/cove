@@ -45,6 +45,11 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo test --release
 
+      # the build cache keeps sherpa-onnx's build result but not the libraries it downloaded: fetch them again
+      - name: Refresh sherpa-onnx libraries (Windows)
+        if: runner.os == 'Windows'
+        run: cargo clean --release -p sherpa-onnx-sys
+
       - name: Build
         run: cargo build --release --locked
 
