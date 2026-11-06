@@ -225,19 +225,19 @@ impl Reply {
 pub type Partial = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
 
 /// Send one message to the chat agent; resumes `sid` when given. `on` sees the reply as it is written.
-/// Returns (session id, reply).
+/// Returns (session id, reply, model).
 // The chat reads outside text (web pages, mail), so no agent may run commands or edit files from it.
-pub fn send(sid: Option<&str>, text: &str, on: Partial) -> Result<(String, String), String> {
+pub fn send(sid: Option<&str>, text: &str, on: Partial) -> Result<(String, String, String), String> {
     fs::create_dir_all(chat_dir()).map_err(|e| e.to_string())?;
     match agent().as_str() {
-        "opencode" => send_opencode(sid, text, &on),
-        "codex" => send_codex(sid, text, &on),
+        "opencode" => send_opencode(sid, text, &on).map(|(s, r)| { let m = crate::agents::model_of("opencode", &s).unwrap_or_default(); (s, r, m) }),
+        "codex" => send_codex(sid, text, &on).map(|(s, r)| { let m = crate::agents::model_of("codex", &s).unwrap_or_default(); (s, r, m) }),
         "claude" => send_claude(sid, text, &on),
         _ => Err("Chat works with Claude Code, Codex and opencode. Pick one at the bottom of the sidebar.".into()),
     }
 }
 
-fn send_claude(sid: Option<&str>, text: &str, on: &Partial) -> Result<(String, String), String> {
+fn send_claude(sid: Option<&str>, text: &str, on: &Partial) -> Result<(String, String, String), String> {
     let claude = crate::launch::which("claude").ok_or("The chat needs Claude Code (claude) on PATH.")?;
     let mut c = Command::new(claude);
     crate::launch::subscription_only(&mut c);
@@ -250,13 +250,14 @@ fn send_claude(sid: Option<&str>, text: &str, on: &Partial) -> Result<(String, S
         c.args(["--resume", s]);
     }
     let lines = collect(c, text, on)?;
+    let model = lines.iter().find_map(|l| serde_json::from_str::<serde_json::Value>(l).ok().filter(|v| v["type"] == "system").and_then(|v| v["model"].as_str().map(str::to_string))).unwrap_or_default();
     let result = lines.iter().rev().find_map(|l| serde_json::from_str::<serde_json::Value>(l).ok().filter(|v| v["type"] == "result"));
     let v = result.ok_or_else(|| "Claude Code did not answer. Is it signed in?".to_string())?;
     let sid = v["session_id"].as_str().ok_or("Claude Code did not answer.")?.to_string();
     if v["is_error"] == true {
         return Err(v["result"].as_str().unwrap_or("Claude Code could not answer.").to_string());
     }
-    Ok((sid, v["result"].as_str().unwrap_or("").trim().to_string()))
+    Ok((sid, v["result"].as_str().unwrap_or("").trim().to_string(), model))
 }
 
 /// opencode's permission rules for the chat: web tools only.

@@ -119,6 +119,16 @@ pub fn opencode_history(id: &str) -> Vec<(String, bool)> {
     read().unwrap_or_default()
 }
 
+/// The model a session used, from the agent's own database (opencode, Codex).
+pub fn model_of(agent: &str, id: &str) -> Option<String> {
+    let (db, q) = match agent {
+        "opencode" => (opencode_db()?, "SELECT json_extract(model, '$.id') FROM session_v2 WHERE id = ?1"),
+        "codex" => (codex_db()?, "SELECT model FROM threads WHERE id = ?1"),
+        _ => return None,
+    };
+    open(&db)?.query_row(q, [id], |r| r.get::<_, Option<String>>(0)).ok().flatten().filter(|m| !m.is_empty())
+}
+
 /// The typed messages and text replies of one Codex thread, from its rollout file, oldest first.
 pub fn codex_history(id: &str) -> Vec<(String, bool)> {
     let Some(c) = codex_db().and_then(|p| open(&p)) else { return vec![] };

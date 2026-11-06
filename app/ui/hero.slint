@@ -152,77 +152,66 @@ export component Bubble inherits HorizontalLayout {
     in property <string> text;
     in property <bool> user;
     in property <[Block]> blocks;
+    in property <string> meta; // above a reply: agent · model · time
     callback copy(string);
     callback link(string);
     callback speak(string);
     property <brush> ink: user ? Theme.on-accent : Theme.ink;
     alignment: user ? end : start;
-    Rectangle {
-        max-width: 640px;
-        border-radius: 14px;
-        background: user ? Theme.accent : Theme.panel-hi;
-        border-width: user ? 0 : 1px;
-        border-color: Theme.hair;
-        accessible-role: AccessibleRole.text; // StyledText is not read out by itself
-        accessible-label: root.text;
-        hover := TouchArea { }
-        VerticalLayout {
-            padding: 9px;
-            padding-left: 13px;
-            padding-right: 13px;
-            spacing: 7px;
-            for b in root.blocks: VerticalLayout {
-                if b.kind == "p": StyledText { height: self.preferred-height; /* measured at its own width: through the for/if blocks Slint counted one line */ text: b.rich; default-color: root.ink; default-font-size: Theme.t-body; link-color: root.user ? Theme.on-accent : Theme.accent-text; link-clicked(u) => { root.link(u); } }
-                if b.kind == "h": StyledText { height: self.preferred-height; /* measured at its own width: through the for/if blocks Slint counted one line */ text: b.rich; default-color: root.ink; default-font-size: Theme.t-lead; link-color: Theme.accent-text; }
-                if b.kind == "quote": HorizontalLayout {
-                    spacing: 9px;
-                    Rectangle { width: 3px; border-radius: 1.5px; background: Theme.hair; }
-                    StyledText { height: self.preferred-height; /* measured at its own width: through the for/if blocks Slint counted one line */ text: b.rich; default-color: Theme.soft; default-font-size: Theme.t-body; link-color: Theme.accent-text; link-clicked(u) => { root.link(u); } }
-                }
-                if b.kind == "rule": Rectangle { height: 1px; background: Theme.hair; }
-                if b.kind == "code" || b.kind == "table": Rectangle {
-                    border-radius: 8px;
-                    background: Theme.cell-empty;
-                    clip: true;
-                    HorizontalLayout {
-                        padding: 8px;
-                        padding-left: 10px;
-                        TextInput {
-                            text: b.text;
-                            read-only: true;
-                            single-line: false;
-                            wrap: b.kind == "code" ? word-wrap : no-wrap;
-                            font-family: Theme.mono;
-                            font-size: Theme.t-small;
-                            color: Theme.ink;
-                            selection-background-color: Theme.accent.with-alpha(0.35);
+    VerticalLayout {
+        spacing: 3px;
+        // who answered, and the reply's tools, on their own line so they never cover the text
+        if !root.user && root.text != "Thinking…": HorizontalLayout {
+            height: 24px;
+            padding-left: 4px;
+            spacing: 2px;
+            Text { text: root.meta; color: Theme.faint; font-size: Theme.t-small; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+            Btn { width: 24px; height: 24px; icon: Icons.speaker; quiet: true; tip: "Read aloud"; clicked => { root.speak(root.text); } }
+            Btn { width: 24px; height: 24px; icon: Icons.copy; quiet: true; tip: "Copy"; clicked => { root.copy(root.text); } }
+        }
+        Rectangle {
+            max-width: 640px;
+            border-radius: 14px;
+            background: user ? Theme.accent : Theme.panel-hi;
+            border-width: user ? 0 : 1px;
+            border-color: Theme.hair;
+            accessible-role: AccessibleRole.text; // StyledText is not read out by itself
+            accessible-label: root.text;
+            VerticalLayout {
+                padding: 9px;
+                padding-left: 13px;
+                padding-right: 13px;
+                spacing: 7px;
+                for b in root.blocks: VerticalLayout {
+                    if b.kind == "p": StyledText { height: self.preferred-height; /* measured at its own width: through the for/if blocks Slint counted one line */ text: b.rich; default-color: root.ink; default-font-size: Theme.t-body; link-color: root.user ? Theme.on-accent : Theme.accent-text; link-clicked(u) => { root.link(u); } }
+                    if b.kind == "h": StyledText { height: self.preferred-height; /* measured at its own width: through the for/if blocks Slint counted one line */ text: b.rich; default-color: root.ink; default-font-size: Theme.t-lead; link-color: Theme.accent-text; }
+                    if b.kind == "quote": HorizontalLayout {
+                        spacing: 9px;
+                        Rectangle { width: 3px; border-radius: 1.5px; background: Theme.hair; }
+                        StyledText { height: self.preferred-height; /* measured at its own width: through the for/if blocks Slint counted one line */ text: b.rich; default-color: Theme.soft; default-font-size: Theme.t-body; link-color: Theme.accent-text; link-clicked(u) => { root.link(u); } }
+                    }
+                    if b.kind == "rule": Rectangle { height: 1px; background: Theme.hair; }
+                    if b.kind == "code" || b.kind == "table": Rectangle {
+                        border-radius: 8px;
+                        background: Theme.cell-empty;
+                        clip: true;
+                        HorizontalLayout {
+                            padding: 8px;
+                            padding-left: 10px;
+                            TextInput {
+                                text: b.text;
+                                read-only: true;
+                                single-line: false;
+                                wrap: b.kind == "code" ? word-wrap : no-wrap;
+                                font-family: Theme.mono;
+                                font-size: Theme.t-small;
+                                color: Theme.ink;
+                                selection-background-color: Theme.accent.with-alpha(0.35);
+                            }
                         }
                     }
                 }
             }
-        }
-        // always there (keyboard and screen readers reach it), shown on hover or focus
-        if !root.user: copy-btn := Btn {
-            opacity: hover.has-hover || self.hovered ? 1 : 0;
-            x: parent.width - self.width - 4px;
-            y: 4px;
-            width: 26px;
-            height: 26px;
-            icon: Icons.copy;
-            quiet: true;
-            tip: "Copy";
-            clicked => { root.copy(root.text); }
-        }
-        if !root.user: Btn {
-            opacity: hover.has-hover || self.hovered ? 1 : 0;
-            x: parent.width - 2 * self.width - 6px;
-            y: 4px;
-            width: 26px;
-            height: 26px;
-            icon: Icons.speaker;
-            quiet: true;
-            tip: "Read aloud";
-            clicked => { root.speak(root.text); }
         }
     }
 }

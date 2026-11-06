@@ -51,7 +51,7 @@ struct State {
     cur: Option<usize>,
     cur_actions: Vec<info::Action>,
     last_page: String,
-    msgs: Vec<(String, bool)>,
+    msgs: Vec<(String, bool, String)>, // (text, from the user, line above a reply: agent · model · time)
     notice: Option<Box<dyn Fn()>>,
     choices: HashMap<&'static str, Vec<(String, String)>>, // setting key -> [(value, label)]
     sys_dark: bool,
@@ -602,7 +602,7 @@ fn report(ui: &AppWindow, r: std::io::Result<()>, what: &str) {
 
 fn say(ui: &AppWindow, text: &str) {
     with(|st| {
-        st.msgs.push((text.to_string(), false));
+        st.msgs.push((text.to_string(), false, String::new()));
         let n = st.msgs.len();
         if n > 200 {
             st.msgs.drain(..n - 200);
@@ -615,15 +615,15 @@ fn say(ui: &AppWindow, text: &str) {
 /// Last few messages for the desk and other pages; the whole conversation for the chat page, scrolled to its end.
 fn show_msgs(ui: &AppWindow) {
     with(|st| {
-        ui.set_msgs(model(st.msgs.iter().rev().take(8).rev().map(|(t, u)| msg(t, *u)).collect()));
-        ui.set_chat_msgs(model(st.msgs.iter().map(|(t, u)| msg(t, *u)).collect()));
+        ui.set_msgs(model(st.msgs.iter().rev().take(8).rev().map(|(t, u, m)| msg(t, *u, m)).collect()));
+        ui.set_chat_msgs(model(st.msgs.iter().map(|(t, u, m)| msg(t, *u, m)).collect()));
     });
     let w = ui.as_weak();
     slint::Timer::single_shot(Duration::from_millis(30), move || { if let Some(ui) = w.upgrade() { ui.invoke_scroll_chat_end() } });
 }
 
 /// A message for the UI: replies split into markdown blocks; what the user typed stays plain.
-fn msg(text: &str, user: bool) -> Msg {
+fn msg(text: &str, user: bool, meta: &str) -> Msg {
     let block = |kind: &str, text: &str, rich: slint::StyledText| Block { kind: ss(kind), text: ss(text), rich };
     let blocks: Vec<Block> = if user {
         text.lines().map(|l| block("p", l, slint::StyledText::from_plain_text(l))).collect() // StyledText draws no \n in plain text
@@ -640,7 +640,7 @@ fn msg(text: &str, user: bool) -> Msg {
             })
             .collect()
     };
-    Msg { text: ss(text), user, blocks: model(blocks) }
+    Msg { text: ss(text), user, blocks: model(blocks), meta: ss(meta) }
 }
 
 /// Handy's remote commands, in order, off the UI thread (each hands its message to the running Handy).
@@ -673,7 +673,7 @@ fn voice(st: &State) -> speech::Voice {
 }
 
 fn say_user(text: &str) {
-    with(|st| st.msgs.push((text.to_string(), true)));
+    with(|st| st.msgs.push((text.to_string(), true, String::new())));
 }
 
 /// The chat page: conversation, bar at the bottom.
@@ -941,6 +941,22 @@ fn main() {
         for _ in 0..40 {
             std::thread::sleep(Duration::from_millis(100));
             println!("{:.3}", m.level());
+        }
+        return;
+    }
+    if args.iter().any(|a| a == "--talk-test") {
+        // print what talk mode hears for 20 s, to check the speech model and the microphone
+        if asr::installed().is_none() { return eprintln!("talk mode is not installed (see the README)"); }
+        let t = std::time::Instant::now();
+        let Some(live) = asr::Live::start() else { return eprintln!("no microphone") };
+        let mut last = asr::Heard::default();
+        while t.elapsed() < Duration::from_secs(20) {
+            let h = live.heard();
+            if h.ready && !last.ready { println!("ready after {:.1} s", t.elapsed().as_secs_f32()); }
+            if h.done.len() > last.done.len() { println!("heard: {}", h.done.last().unwrap()); }
+            if h.ended { return eprintln!("listening stopped"); }
+            last = h;
+            std::thread::sleep(Duration::from_millis(50));
         }
         return;
     }
@@ -1748,6 +1764,8 @@ fn chat_send(ui: &AppWindow, text: &str) {
     if ui.get_mode() == "chat" && ui.get_page() != "chat" { show_chat(ui); }
     say(ui, "Thinking…");
     let (sid, carry) = with(|st| (st.chat_sid.clone(), st.carry.take()));
+    let agent = with(|st| launch::label(launch::chat_agent(&st.s)).to_string());
+    let began = std::time::Instant::now();
     let weak = ui.as_weak();
     let text = format!("{}{text}", carry.clone().unwrap_or_default());
     std::thread::spawn(move || {
@@ -1764,12 +1782,16 @@ fn chat_send(ui: &AppWindow, text: &str) {
         let _ = weak.upgrade_in_event_loop(move |ui| {
             unthink(&ui);
             match r {
-                Ok((sid, reply)) => {
+                Ok((sid, reply, model)) => {
                     ui.set_chat_id(ss(&sid));
                     with(|st| st.chat_sid = Some(sid));
                     ui.set_chat_active(true);
                     refresh_chats(&ui);
                     say(&ui, if reply.is_empty() { "(no answer)" } else { &reply });
+                    // the line above the reply: who answered, with which model, and how long it took
+                    let meta = [agent.as_str(), model.as_str(), &format!("{:.1} s", began.elapsed().as_secs_f32())].iter().filter(|x| !x.is_empty()).copied().collect::<Vec<_>>().join(" · ");
+                    with(|st| if let Some(m) = st.msgs.last_mut() { m.2 = meta; });
+                    show_msgs(&ui);
                     if !reply.is_empty() && with(|st| st.talking && st.s.talkback) { speak(&ui, reply); }
                 }
                 Err(e) => {
@@ -1800,7 +1822,8 @@ fn open_chat(ui: &AppWindow, id: &str) {
     let mut h = chat::history(id);
     let n = h.len();
     h.drain(..n.saturating_sub(30));
-    with(|st| { st.msgs = h; st.chat_sid = Some(id.to_string()); });
+    let who = with(|st| launch::label(launch::chat_agent(&st.s)).to_string());
+    with(|st| { st.msgs = h.into_iter().map(|(t, u)| { let m = if u { String::new() } else { who.clone() }; (t, u, m) }).collect(); st.chat_sid = Some(id.to_string()); });
     ui.set_chat_active(true);
     ui.set_chat_id(ss(id));
     show_chat(ui);

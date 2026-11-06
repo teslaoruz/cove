@@ -11,7 +11,7 @@ export struct Fact { title: string, value: string, sub: string, warn: bool }
 export struct Group { title: string, items: [ProjectItem] }
 export struct Coll { name: string, count: int, hue: int }
 export struct SessionItem { id: string, title: string, sub: string }
-export struct Msg { text: string, user: bool, blocks: [Block] }
+export struct Msg { text: string, user: bool, blocks: [Block], meta: string }
 export struct ScanItem { path: string, collection: string }
 export struct ChatItem { id: string, title: string, when: string }
 export struct RecentChip { item: ProjectItem, id: string, title: string, when: string }
@@ -334,7 +334,7 @@ export component AppWindow inherits Window {
     in property <bool> voice-wait;     // a reply is about to be spoken
     property <bool> getting-ready: listening && !listen-ready;
     property <float> pulse: (1 + Math.sin(animation-tick() / 1ms * 0.006 * 1rad)) / 2; // 0..1, about one beat a second
-    property <color> amber: #ffc53d;
+    property <bool> waiting: getting-ready || (voice-wait && !listening); // something is loading: show the wait dots
     out property <bool> orb-hover: orb-el.hover || desk-ta.has-hover;
     out property <bool> orb-down: orb-el.down;
     out property <float> orb-mx: orb-el.hover ? orb-el.mx : (desk-ta.absolute-position.x + desk-ta.mouse-x - orb-el.absolute-position.x) / orb-el.width;
@@ -744,7 +744,7 @@ export component AppWindow inherits Window {
                                         VerticalLayout {
                                             width: Math.min(640px, parent.width);
                                             spacing: 8px;
-                                            for m in msgs: Bubble { text: m.text; user: m.user; blocks: m.blocks; copy(t) => { root.copy-text(t); } link(u) => { root.open-link(u); } speak(t) => { root.read-aloud(t); } }
+                                            for m in msgs: Bubble { text: m.text; user: m.user; blocks: m.blocks; meta: m.meta; copy(t) => { root.copy-text(t); } link(u) => { root.open-link(u); } speak(t) => { root.read-aloud(t); } }
                                             HorizontalLayout {
                                                 alignment: end;
                                                 spacing: 8px;
@@ -1228,10 +1228,11 @@ cont(n) => { root.continue-project(n); }
                             spacing: 10px;
                             alignment: end;
                             if chat-msgs.length == 0: Text { text: "Ask me anything. Press the Copilot key to talk."; color: Theme.faint; horizontal-alignment: center; }
-                            for m in chat-msgs: Bubble { text: m.text; user: m.user; blocks: m.blocks; copy(t) => { root.copy-text(t); } link(u) => { root.open-link(u); } speak(t) => { root.read-aloud(t); } }
+                            for m in chat-msgs: Bubble { text: m.text; user: m.user; blocks: m.blocks; meta: m.meta; copy(t) => { root.copy-text(t); } link(u) => { root.open-link(u); } speak(t) => { root.read-aloud(t); } }
                         }
                     }
                     if ct > 0 && chat-active: HorizontalLayout {
+                        z: 10; // above the orb, whose touch area overlaps this row and took its clicks
                         opacity: ct;
                         x: chat-x;
                         y: 140px;
@@ -1309,13 +1310,13 @@ cont(n) => { root.continue-project(n); }
                         border-radius: h0 / 2 - (h0 / 2 - 11px) * d;
                         one-line := Text { visible: false; text: "Xg"; font-size: Theme.t-lead; }
                         background: Theme.field;
-                        // amber while the speech model loads, red once it listens
-                        border-width: listening ? 2px : 1px;
-                        border-color: getting-ready ? amber.with-alpha(0.45 + 0.55 * pulse) : listening ? #ff453a : search.has-focus ? Theme.accent : Theme.hair;
-                        drop-shadow-blur: listening ? 22px : 18px * (1 - d);
-                        drop-shadow-offset-y: listening ? 0 : 4px;
-                        drop-shadow-color: getting-ready ? amber.with-alpha(0.35) : listening ? #ff453a.with-alpha(0.25 + 0.25 * pulse) : Theme.shadow;
-                        animate border-color, drop-shadow-color { duration: 260ms; }
+                        // a soft accent while the speech model loads, a thin red line once it listens
+                        border-width: 1px;
+                        border-color: getting-ready ? Theme.accent.with-alpha(0.35 + 0.25 * pulse) : listening ? #ff453a.with-alpha(0.7) : search.has-focus ? Theme.accent : Theme.hair;
+                        drop-shadow-blur: 18px * (1 - d);
+                        drop-shadow-offset-y: 4px;
+                        drop-shadow-color: Theme.shadow;
+                        animate border-color { duration: 260ms; }
                         // a light running along the bottom edge while it loads
                         if getting-ready: Rectangle {
                             x: parent.border-radius;
@@ -1326,7 +1327,7 @@ cont(n) => { root.continue-project(n); }
                             Rectangle {
                                 width: parent.width * 0.35;
                                 x: (Math.mod(animation-tick() / 1ms, 1400) / 1400 * 1.35 - 0.35) * parent.width;
-                                background: @linear-gradient(90deg, amber.with-alpha(0) 0%, amber 50%, amber.with-alpha(0) 100%);
+                                background: @linear-gradient(90deg, Theme.accent.with-alpha(0) 0%, Theme.accent.with-alpha(0.55) 50%, Theme.accent.with-alpha(0) 100%);
                             }
                         }
                         HorizontalLayout {
@@ -1375,20 +1376,32 @@ cont(n) => { root.continue-project(n); }
                         width: 54px - 10px * d;
                         height: self.width;
                         border-radius: self.width / 2;
-                        background: getting-ready ? amber : listening ? #ff453a : mic-ta.has-hover ? Theme.panel-hi : Theme.field;
+                        background: listening && !getting-ready ? #ff453a : mic-ta.has-hover ? Theme.panel-hi : Theme.field;
                         animate background { duration: 260ms; }
-                        // a reply is about to be read aloud: an amber ring breathes until the voice starts
-                        border-width: voice-wait && !listening ? 2px : listening ? 0 : 1px;
-                        border-color: voice-wait && !listening ? amber.with-alpha(0.35 + 0.65 * pulse) : Theme.hair;
+                        border-width: listening && !getting-ready ? 0 : 1px;
+                        border-color: Theme.hair;
                         drop-shadow-blur: 18px * (1 - d);
                         drop-shadow-offset-y: 4px;
-                        drop-shadow-color: listening ? (getting-ready ? amber : #ff453a).with-alpha(0.45) : voice-wait ? amber.with-alpha(0.4 * pulse) : Theme.shadow;
+                        drop-shadow-color: Theme.shadow;
                         opacity: 1 - Math.max(0, d - 0.6) / 0.37;
                         accessible-role: button;
                         accessible-label: listening ? "Stop listening" : "Talk";
                         accessible-action-default => { root.mic(); }
                         mic-ta := TouchArea { mouse-cursor: pointer; clicked => { root.mic(); } }
-                        Icon { d: voice-wait && !listening ? Icons.speaker : Icons.mic; size: 20px; weight: 1.8px; color: getting-ready ? #1c1c1e : listening ? #ffffff : voice-wait ? amber : Theme.ink; }
+                        if !waiting: Icon { d: Icons.mic; size: 20px; weight: 1.8px; color: listening ? #ffffff : Theme.ink; }
+                        // three dots that rise in turn: the usual sign that something is on its way
+                        if waiting: HorizontalLayout {
+                            alignment: center;
+                            spacing: 4px;
+                            for i in 3: Rectangle {
+                                property <float> wave: (1 + Math.sin((animation-tick() / 1ms * 0.008 - i * 0.9) * 1rad)) / 2;
+                                y: (parent.height - self.height) / 2 - 3px * wave;
+                                width: 5px;
+                                height: 5px;
+                                border-radius: 2.5px;
+                                background: Theme.accent-text.with-alpha(0.45 + 0.55 * wave);
+                            }
+                        }
                     }
                     // assistant replies on other pages: a card under the bar
                     if reply-open && page != "home" && !chatting: Panel {
@@ -1409,7 +1422,7 @@ cont(n) => { root.continue-project(n); }
                                 padding-left: 16px;
                                 padding-right: 44px;
                                 spacing: 6px;
-                                for m in msgs: Bubble { text: m.text; user: m.user; blocks: m.blocks; copy(t) => { root.copy-text(t); } link(u) => { root.open-link(u); } speak(t) => { root.read-aloud(t); } }
+                                for m in msgs: Bubble { text: m.text; user: m.user; blocks: m.blocks; meta: m.meta; copy(t) => { root.copy-text(t); } link(u) => { root.open-link(u); } speak(t) => { root.read-aloud(t); } }
                             }
                         }
                         Btn { x: parent.width - self.width - 6px; y: 6px; icon: Icons.close; quiet: true; tip: "Close"; clicked => { reply-open = false; } }
