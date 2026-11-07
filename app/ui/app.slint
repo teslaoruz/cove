@@ -1215,9 +1215,9 @@ cont(n) => { root.continue-project(n); }
                         visible: ct > 0;
                         opacity: ct;
                         x: 0;
-                        y: 176px + 40px * (1 - ct);
+                        y: 192px + 40px * (1 - ct);
                         width: parent.width;
-                        height: Math.max(0px, chat-bar-y - 12px - 176px - bar.extra * ct);
+                        height: Math.max(0px, chat-bar-y - 12px - 192px - bar.extra * ct);
                         content-width: self.visible-width;
                         content-height: Math.max(self.visible-height, chat-col.preferred-height);
                         chat-col := VerticalLayout {
@@ -1235,7 +1235,7 @@ cont(n) => { root.continue-project(n); }
                         z: 10; // above the orb, whose touch area overlaps this row and took its clicks
                         opacity: ct;
                         x: chat-x;
-                        y: 140px;
+                        y: 148px;
                         width: chat-w;
                         height: 32px;
                         alignment: end;
@@ -1436,9 +1436,9 @@ cont(n) => { root.continue-project(n); }
                         property <length> hy: orb-slot.absolute-position.y - stage.absolute-position.y;
                         property <length> dx: stage.width - small - 24px; // lands on the mic button
                         property <length> dy: 14px;
-                        width: (big + (small - big) * dock) * (1 - ct) + 170px * ct;
+                        width: (big + (small - big) * dock) * (1 - ct) + 130px * ct; // smaller on the chat screen, with room below for the buttons
                         height: self.width;
-                        x: (hx + (dx - hx) * dock) * (1 - ct) + (stage.width - 170px) / 2 * ct;
+                        x: (hx + (dx - hx) * dock) * (1 - ct) + (stage.width - 130px) / 2 * ct;
                         y: (hy + (dy - hy) * dock) * (1 - ct);
                         frame: orb-frame;
                         t: dock * (1 - ct);
